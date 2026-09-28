@@ -514,7 +514,7 @@ var res := GnumarusGodotProjectAnalyzerSuiteResourceIntegrity.new().analyze_file
 
 - Standalone CLI (no writes, exits 0 clean / 1 issues / 2 infra):
   `godot --headless --path . --script
-  res://addons/0GnumarusGodotProjectAnalyzerSuite/check_resource_integrity.gd`
+  res://addons/0GnumarusGodotProjectAnalyzerSuite/GnumarusGodotProjectAnalyzerSuiteResourceIntegrityChecker.gd`
   (optional `res://` paths after `--` check only those files).
   Prints `checking [i/n] path` progress plus one
   `path:line: kind message` line per issue.
