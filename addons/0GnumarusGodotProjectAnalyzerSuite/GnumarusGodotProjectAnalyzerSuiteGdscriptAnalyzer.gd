@@ -158,6 +158,7 @@ const ERR_STRUCT_MALFORMED := "struct_malformed"
 const ERR_STRUCT_UNKNOWN_TYPE := "struct_unknown_type"
 const ERR_STRUCT_CONFLICT := "struct_conflict"
 const ERR_STRUCT_MISMATCH := "struct_mismatch"
+const ERR_STRUCT_MUTATE := "struct_mutate"
 const ERR_INTERFACE_MISPLACED := "interface_misplaced"
 const ERR_INTERFACE_MALFORMED := "interface_malformed"
 const ERR_INTERFACE_UNKNOWN_TYPE := "interface_unknown_type"
@@ -1704,13 +1705,19 @@ func _struct_lit_split(value: Variant) -> Dictionary:
 
 
 ## Checks an initializer value against a struct vartype (exact keys +
-## per-key literal values). Non-literals skip (unprovable).
-func _check_struct_value(tname: String, value: Variant, line: int, owner: String) -> void:
+## per-key literal values). Non-literals skip (unprovable) unless
+## is_init: declarations must create a struct with a compatible
+## literal (unlike dictionaries, structs cannot start empty), so a
+## missing or non-literal initializer errors instead of staying
+## silent.
+func _check_struct_value(tname: String, value: Variant, line: int, owner: String, is_init := false) -> void:
 	var def := _struct_def(tname)
 	if def.is_empty():
 		return
 	var lit := _struct_lit_split(value)
 	if not bool(lit.get("literal", false)):
+		if is_init:
+			_error(ERR_STRUCT_MISMATCH, "struct '" + tname + "' must be initialized with a compatible literal where it is declared (unlike dictionaries, structs cannot be created empty)", line, 0, owner)
 		return
 	_check_struct_elements(tname, def, lit.get("pairs", []), line, owner)
 
@@ -1826,7 +1833,7 @@ func _check_nominal_values(d: Dictionary, value: Variant, line: int, owner: Stri
 	if vt != "":
 		seen[vt] = true
 		_check_tuple_value(vt, value, line, owner, true)
-		_check_struct_value(vt, value, line, owner)
+		_check_struct_value(vt, value, line, owner, true)
 	var ann: Dictionary = d.get("var_ann", {})
 	for m in (ann.get("types", []) as Array):
 		var ms := str(m)
@@ -1834,7 +1841,7 @@ func _check_nominal_values(d: Dictionary, value: Variant, line: int, owner: Stri
 			continue
 		seen[ms] = true
 		_check_tuple_value(ms, value, line, owner, true)
-		_check_struct_value(ms, value, line, owner)
+		_check_struct_value(ms, value, line, owner, true)
 
 
 ## Element-wise check of a literal element list against a definition.
@@ -9871,6 +9878,10 @@ func _verify_chain(tokens: Array, i: int, scope: Dictionary, owner: String, fn: 
 							else:
 								next_links.append(cl)
 				else:
+					if is_call and seg == "set":
+						_check_struct_set(sname, tokens, j, owner)
+					if is_call and seg in STRUCT_SHAPE_METHODS:
+						_error(ERR_STRUCT_MUTATE, "cannot call '" + seg + "()' on struct '" + sname + "' (structs are fixed-shape)", int((tokens[j] as Dictionary).get("line", 0)), int((tokens[j] as Dictionary).get("column", 0)), owner)
 					var dv := _verify_seg(["Dictionary"], seg, is_call, false, tokens[j], owner, true)
 					var dvt := str(dv.get("vtype", ""))
 					if dvt != "":
@@ -11200,9 +11211,11 @@ func _check_call_assign(vname: String, vtoks: Array, target: Dictionary, scope: 
 ## Compares substituted call-result heads against a declared
 ## assignment target, reporting assign_mismatch per unfitting head.
 ## Shared by inferred (class-prebound) and explicit (@generic_call)
-## call results: dynamic/Variant/null/template heads and
-## Variant/dynamic/template slots stay lenient. Never fails.
-func _check_call_heads(vname: String, heads: Array, target: Dictionary, line: int, col: int, owner: String) -> void:
+## call results and struct field reads: dynamic/Variant/null/
+## template heads and Variant/dynamic/template slots stay lenient.
+## `src` names the value origin in messages ("call" by default).
+## Never fails.
+func _check_call_heads(vname: String, heads: Array, target: Dictionary, line: int, col: int, owner: String, src := "call") -> void:
 	if vname == "" or vname == "_":
 		return
 	if (target as Dictionary).is_empty() or not _decl_has_type(target):
@@ -11236,7 +11249,7 @@ func _check_call_heads(vname: String, heads: Array, target: Dictionary, line: in
 				ok = true
 				break
 		if not ok:
-			_error(ERR_ASSIGN_MISMATCH, "cannot assign '" + str(h) + "' from call to variable '" + vname + "' declared as '" + "|".join(arms) + "' ('" + str(h) + "' is neither '" + "|".join(arms) + "' nor a subclass of it)", line, col, owner)
+			_error(ERR_ASSIGN_MISMATCH, "cannot assign '" + str(h) + "' from " + src + " to variable '" + vname + "' declared as '" + "|".join(arms) + "' ('" + str(h) + "' is neither '" + "|".join(arms) + "' nor a subclass of it)", line, col, owner)
 
 
 ## True for a null guard ({types ["null"]}, from `==`/`!=` or
@@ -11390,6 +11403,7 @@ func _flow_assign_stmt(node: Dictionary, scope: Dictionary, fn: Variant, env: Di
 	_check_null_assign(toks, node, scope, fn, env, owner)
 	var tt := _trim_trivia(toks)
 	_check_index_assign(tt, fn, scope, env, owner)
+	_check_struct_stores(tt, fn, scope, env, owner)
 	var vname := ""
 	var target := {}
 	if tt.size() >= 3 and (tt[0] is Dictionary) and str((tt[0] as Dictionary).get("type", "")) == "IDENTIFIER" and (tt[1] is Dictionary) and str((tt[1] as Dictionary).get("type", "")) == "OPERATOR" and str((tt[1] as Dictionary).get("value", "")) == "=":
@@ -11405,6 +11419,7 @@ func _flow_assign_stmt(node: Dictionary, scope: Dictionary, fn: Variant, env: Di
 		return
 	_flow_assign_call(vname, toks.slice(2), target, scope, fn, env, owner)
 	_check_call_assign(vname, toks.slice(2), target, scope, fn, env, owner)
+	_check_struct_read(vname, toks.slice(2), target, scope, fn, env, owner)
 
 
 ## Literal checks of an `x = [...]` / `x = {...}` reassignment RHS
@@ -11423,7 +11438,22 @@ func _check_assign_nominal(target: Dictionary, rhs: Array, line: int, owner: Str
 			continue
 		seen[ms] = true
 		_check_tuple_reassign(ms, rhs, line, owner)
-		_check_struct_value(ms, {"tokens": rhs}, line, owner)
+		_check_struct_reassign(ms, rhs, line, owner)
+
+
+## Reassignment value against one struct-typed slot: literals run the
+## key-set rule, anything else errors (structs only receive literal
+## value assignments — shape without value tracking, mirroring the
+## tuple rule). Unknown names stay silent. Never fails.
+func _check_struct_reassign(tname: String, rhs: Array, line: int, owner: String) -> void:
+	var def := _struct_def(tname)
+	if def.is_empty():
+		return
+	var lit := _struct_lit_split({"tokens": rhs})
+	if not bool(lit.get("literal", false)):
+		_error(ERR_STRUCT_MISMATCH, "struct '" + tname + "' can only be assigned a literal value", line, 0, owner)
+		return
+	_check_struct_elements(tname, def, lit.get("pairs", []), line, owner)
 
 
 ## Reassignment value against one tuple-typed slot: literals run the
@@ -11544,6 +11574,164 @@ func _check_tuple_element(tname: String, full: Dictionary, idx: int, rhs: Array,
 			return false
 	_error(ERR_TUPLE_MISMATCH, "tuple '" + tname + "' element " + str(idx) + " expects '" + _show_types(item.get("types", [])) + "', got '" + et + "'", line, 0, owner)
 	return true
+
+
+## Field rec of a struct definition by key ({} when the struct or
+## the key is unknown). Pure.
+func _struct_field_rec(sname: String, key: String) -> Dictionary:
+	var sdef := _struct_def(sname)
+	if sdef.is_empty() or str(key) == "":
+		return {}
+	for f in (sdef.get("fields", []) as Array):
+		if f is Dictionary and str((f as Dictionary).get("name", "")) == str(key):
+			return f
+	return {}
+
+
+## Dictionary methods that change a struct's key set (per the Godot
+## Dictionary docs; `set` keeps keys and goes through the store rule
+## instead, `sort` only reorders — key order is not struct identity —
+## readers never mutate). Called on a struct-typed value, any of
+## these is a struct_mutate error.
+const STRUCT_SHAPE_METHODS := ["assign", "clear", "erase", "get_or_add", "merge"]
+
+
+## `s.set(k, v)` on a struct-typed value (struct_mismatch on a
+## wrong literal value, missing_member on an undeclared key —
+## mirroring key stores). Runs only for undeclared method names
+## (a declared `set` field keeps field semantics). Non-literal keys
+## and exotic arities skip (arity belongs to the Dictionary check
+## below). Never fails.
+func _check_struct_set(sname: String, tokens: Array, j: int, owner: String) -> void:
+	if j + 1 >= tokens.size() or not (tokens[j + 1] is Dictionary) or str((tokens[j + 1] as Dictionary).get("type", "")) != "LPAREN":
+		return
+	var slices := _split_arg_slices(tokens, j + 1)
+	if slices.size() != 2:
+		return
+	var key_toks := _trim_trivia(slices[0])
+	if key_toks.size() != 1 or not (key_toks[0] is Dictionary) or str((key_toks[0] as Dictionary).get("type", "")) != "STRING":
+		return
+	var raw := str((key_toks[0] as Dictionary).get("value", ""))
+	var key := raw.substr(1, raw.length() - 2) if raw.length() >= 2 else ""
+	var field := _struct_field_rec(sname, key)
+	if (field as Dictionary).is_empty():
+		_error(ERR_MISSING_MEMBER, "type '" + sname + "' has no member '" + key + "'", int((key_toks[0] as Dictionary).get("line", 0)), int((key_toks[0] as Dictionary).get("column", 0)), owner)
+		return
+	_check_struct_field_value(sname, field, slices[1], int((tokens[j] as Dictionary).get("line", 0)), owner)
+
+
+## Value check of a literal against one struct field (struct_mismatch
+## on a wrong literal type, mirroring _check_struct_elements).
+## Non-literals and `any` fields skip. Never fails.
+func _check_struct_field_value(sname: String, field: Dictionary, rhs: Array, line: int, owner: String) -> void:
+	if bool((field as Dictionary).get("any", false)):
+		return
+	var et := _infer_lit_elem(_trim_trivia(rhs))
+	if et == "":
+		return
+	for m in (field as Dictionary).get("types", []):
+		if _lit_compatible(et, str(m)):
+			return
+	_error(ERR_STRUCT_MISMATCH, "struct '" + sname + "' field '" + str((field as Dictionary).get("name", "")) + "' expects '" + _show_types((field as Dictionary).get("types", [])) + "', got '" + et + "'", line, 0, owner)
+
+
+## Member (`a.x = v`) and key (`a['x'] = v`) stores on
+## struct-typed bases: unknown fields stay silent (the chain owns
+## missing_member); known fields run the value rule. Compound stores
+## (`+=`) and exotic shapes skip, like tuple stores. Never fails.
+func _check_struct_stores(tt: Array, fn: Variant, scope: Dictionary, env: Dictionary, owner: String) -> void:
+	if tt.size() < 5:
+		return
+	for k in [0, 1, 2, 3]:
+		if not (tt[k] is Dictionary):
+			return
+	if str((tt[0] as Dictionary).get("type", "")) != "IDENTIFIER":
+		return
+	var base := str((tt[0] as Dictionary).get("value", ""))
+	if base == "" or base == "_":
+		return
+	var sdef := _struct_base_def(base, fn, scope, owner, env, {})
+	if (sdef as Dictionary).is_empty():
+		return
+	var sname := str((sdef as Dictionary).get("name", ""))
+	var field := {}
+	var rhs: Array = []
+	var line := int((tt[0] as Dictionary).get("line", 0))
+	if str((tt[1] as Dictionary).get("type", "")) == "DOT" and str((tt[2] as Dictionary).get("type", "")) == "IDENTIFIER" and str((tt[3] as Dictionary).get("type", "")) == "OPERATOR" and str((tt[3] as Dictionary).get("value", "")) == "=":
+		field = _struct_field_rec(sname, str((tt[2] as Dictionary).get("value", "")))
+		rhs = tt.slice(4)
+		line = int((tt[2] as Dictionary).get("line", line))
+	elif str((tt[1] as Dictionary).get("type", "")) == "LBRACKET" and str((tt[2] as Dictionary).get("type", "")) == "STRING" and tt.size() > 5 and str((tt[3] as Dictionary).get("type", "")) == "RBRACKET" and str((tt[4] as Dictionary).get("type", "")) == "OPERATOR" and str((tt[4] as Dictionary).get("value", "")) == "=":
+		var raw := str((tt[2] as Dictionary).get("value", ""))
+		var key := raw.substr(1, raw.length() - 2) if raw.length() >= 2 else ""
+		field = _struct_field_rec(sname, key)
+		rhs = tt.slice(5)
+		line = int((tt[2] as Dictionary).get("line", line))
+	else:
+		return
+	if (field as Dictionary).is_empty():
+		return
+	_check_struct_field_value(sname, field, rhs, line, owner)
+
+
+## Struct field reads into declared slots (`b = a.x`,
+## `b = a['x']`, `b = a.get('x', dflt)`): the field types must fit
+## the slot (assign_mismatch, shared tail). Whole-RHS single accesses
+## only; unknown/dynamic bases and keys stay silent (the chain owns
+## missing members); `any`/typeless fields stay silent; chains skip.
+## For `get`, a literal known key means the default never fires, so
+## only field types compare. Never fails.
+func _check_struct_read(vname: String, vtoks: Array, target: Dictionary, scope: Dictionary, fn: Variant, env: Dictionary, owner: String) -> void:
+	if vname == "" or vname == "_":
+		return
+	if (target as Dictionary).is_empty() or not _decl_has_type(target):
+		return
+	var tt := _trim_trivia(vtoks)
+	if tt.is_empty():
+		return
+	for t in tt:
+		if not (t is Dictionary):
+			return
+	var base := ""
+	var key := ""
+	var line := 0
+	var col := 0
+	if tt.size() == 3 and str((tt[0] as Dictionary).get("type", "")) == "IDENTIFIER" and str((tt[1] as Dictionary).get("type", "")) == "DOT" and str((tt[2] as Dictionary).get("type", "")) == "IDENTIFIER":
+		base = str((tt[0] as Dictionary).get("value", ""))
+		key = str((tt[2] as Dictionary).get("value", ""))
+		line = int((tt[2] as Dictionary).get("line", 0))
+		col = int((tt[2] as Dictionary).get("column", 0))
+	elif tt.size() == 4 and str((tt[0] as Dictionary).get("type", "")) == "IDENTIFIER" and str((tt[1] as Dictionary).get("type", "")) == "LBRACKET" and str((tt[2] as Dictionary).get("type", "")) == "STRING" and str((tt[3] as Dictionary).get("type", "")) == "RBRACKET":
+		base = str((tt[0] as Dictionary).get("value", ""))
+		var raw := str((tt[2] as Dictionary).get("value", ""))
+		key = raw.substr(1, raw.length() - 2) if raw.length() >= 2 else ""
+		line = int((tt[2] as Dictionary).get("line", 0))
+		col = int((tt[2] as Dictionary).get("column", 0))
+	elif tt.size() > 4 and str((tt[0] as Dictionary).get("type", "")) == "IDENTIFIER" and str((tt[1] as Dictionary).get("type", "")) == "DOT" and str((tt[2] as Dictionary).get("type", "")) == "IDENTIFIER" and str((tt[2] as Dictionary).get("value", "")) == "get" and str((tt[3] as Dictionary).get("type", "")) == "LPAREN" and _match_close(tt, 3) == tt.size() - 1:
+		var slices := _split_arg_slices(tt, 3)
+		if slices.size() < 1 or slices.size() > 2:
+			return
+		var key_toks := _trim_trivia(slices[0])
+		if key_toks.size() != 1 or not (key_toks[0] is Dictionary) or str((key_toks[0] as Dictionary).get("type", "")) != "STRING":
+			return
+		var raw := str((key_toks[0] as Dictionary).get("value", ""))
+		base = str((tt[0] as Dictionary).get("value", ""))
+		key = raw.substr(1, raw.length() - 2) if raw.length() >= 2 else ""
+		line = int((tt[2] as Dictionary).get("line", 0))
+		col = int((tt[2] as Dictionary).get("column", 0))
+	else:
+		return
+	if base == "" or base == "_" or key == "":
+		return
+	var sdef := _struct_base_def(base, fn, scope, owner, env, {})
+	if (sdef as Dictionary).is_empty():
+		return
+	var sname := str((sdef as Dictionary).get("name", ""))
+	var field := _struct_field_rec(sname, key)
+	if (field as Dictionary).is_empty():
+		return
+	var heads: Array = ((field as Dictionary).get("types", []) as Array).duplicate()
+	_check_call_heads(vname, heads, target, line, col, owner, "struct field '" + sname + "." + key + "'")
 
 
 ## Errors `vname = null` (bare null literal, trailing notes ignored)
@@ -11725,6 +11913,7 @@ func _flow_stmt(node: Dictionary, scope: Dictionary, owner: String, fn: Variant,
 		_apply_assign_invalidation(str(node.get("name", "")), _as_tokens(node.get("value", null)), scope, fn, env, owner, true)
 		_flow_assign_call(str(node.get("name", "")), _as_tokens(node.get("value", null)), node, scope, fn, env, owner)
 		_check_call_assign(str(node.get("name", "")), _as_tokens(node.get("value", null)), node, scope, fn, env, owner)
+		_check_struct_read(str(node.get("name", "")), _as_tokens(node.get("value", null)), node, scope, fn, env, owner)
 		_flow_lambda_value(node.get("value", null), scope, owner)
 		var acc: Variant = node.get("accessors", null)
 		if acc is Dictionary:

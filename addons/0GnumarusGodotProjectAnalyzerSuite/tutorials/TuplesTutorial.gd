@@ -15,9 +15,9 @@
 # The tuple size could be perfectly infered using the argument count but as a design choice I decided to make it explicit.
 # A declared tuple name (as all other type names except for generic argument names) is globaly valid. This means that a tuple name declared in one script is valid in all scripts in the same project. So you can declare it in one script and use it, for example, as a \@param in other script.
 
-func tupletest1()->void:
+func tuple_usage()->void:
 	# To annotate a \@var, \@param or \@return as a tuple (as for any other declared type), the annotated type must be COMPATIBLE AND NARROWER or equal (not wider) than the gdscript declared type. this means that, for a tuple, the variable must be declared as "Array", "Variant" or untyped.
-	# If your tupple happens to be homogeneous (all indexes have the same type) you can use a typed array, but that's completely optional.
+	# If your tupple happens to be homogeneous (all indexes have the same type) you can use a typed array, but that's completely optional. Since you'll probably use different index types for each value you'll be forced to use an untyped array anyway.
 	# @var a0 My2SlotTupleOfIntAndInt
 	var a0: Array[int] = [0, 0]
 	var a1: Array[int] = [0, 0]
@@ -35,8 +35,8 @@ func tupletest1()->void:
 
 	# @var c2 My2SlotTupleOfIntAndString
 	var c2 # unlike arrays, tuples MUST be initialized at the declaration site using a compatible array literal
-	# the line bellow yields an error because My2SlotTupleOfIntAndString is incompatible with int. the analyzer considers the inheritance of both types as "int < Variant" and "My2SlotTupleOfIntAndString < Array < Variant"
 
+	# the line bellow yields an error because My2SlotTupleOfIntAndString is incompatible with int. the analyzer considers the inheritance of both types as "int < Variant" and "My2SlotTupleOfIntAndString < Array < Variant"
 	# @var d My2SlotTupleOfIntAndString
 	var d: int
 

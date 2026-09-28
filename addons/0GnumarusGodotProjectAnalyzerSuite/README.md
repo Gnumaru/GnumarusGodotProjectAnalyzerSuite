@@ -1403,6 +1403,11 @@ func f():
     print(p.nope)                 # ERROR: has no member 'nope'
     print(p["x"])                 # OK: literal keys resolve
     print(p.keys())               # OK: Dictionary methods work
+    p.x = "s"                     # ERROR: field 'x' expects 'int'
+    p["x"] = "s"                  # ERROR: same rule through key syntax
+    p.set("x", "s")               # ERROR: same rule through set()
+    var s: String = p.x           # ERROR: cannot assign 'int' to String slot
+    var t: String = p.get("x", 0) # ERROR: same rule through get()
 ```
 
 - Structs are virtual types (like aliases): they refine `Dictionary`,
@@ -1411,7 +1416,15 @@ func f():
   above). A struct narrows `Dictionary`; a `Dictionary` flows in
   only as a conforming literal (checked at `var`/`const`
   declarations, via the annotation too); different struct names
-  never mix.
+  never mix. Declarations must create the struct with a compatible
+  literal (`struct_mismatch` on missing/non-literal initializers —
+  like tuples, structs cannot start empty). Reassignments to struct slots take literals only
+  (`struct_mismatch` otherwise — shape without value tracking,
+  mirroring the tuple rule). Structs are immutable values too:
+  key-set-changing `Dictionary` methods on a struct-typed value
+  error `struct_mutate` (`assign`, `clear`, `erase`, `get_or_add`,
+  `merge` — `sort` only reorders, and key order is not struct
+  identity, so it stays silent, like readers and `make_read_only`).
   Definitions live top-level only; duplicates and clashes error
   (`struct_conflict`); bad shapes error (`struct_malformed`,
   `struct_unknown_type`, `struct_mismatch`). Same documented gaps as
@@ -1728,7 +1741,8 @@ suites still print, so the marker alone could look green).
   assignment checks, annotation-position bound checks and
   `@generic_func` declarations),
   `test_virtual.gd` (virtual types: annotation-only tuples/structs/aliases),
-  `test_struct.gd` (`@struct` rule),
+  `test_struct.gd` (`@struct` rule, including literal-only reassignments,
+  field read/store checks and shape mutators),
   `test_interface.gd` (`@interface` rule),
   `test_implements.gd` (`@implements` rule),
   `test_flow.gd` (flow member checks + guards + block-scope
