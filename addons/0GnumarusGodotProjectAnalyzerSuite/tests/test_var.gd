@@ -45,6 +45,8 @@ func _v_before_decl(h) -> void:
 	h.check(_clean(h.analyze_text("extends Node\n# @var v int|String\nvar v: Variant\n", "res://tests/tmp_var_d4.gd")), "union before-decl clean")
 	h.check(_clean(h.analyze_text("extends Node\n# @var MAX int\nconst MAX = 10\n", "res://tests/tmp_var_d5.gd")), "const inferred clean")
 	h.check(_has_err(h.analyze_text("extends Node\n# @var MAX String\nconst MAX = 10\n", "res://tests/tmp_var_d6.gd"), "var_mismatch", "declared as 'int'"), "const inferred mismatch errors")
+	h.check(_clean(h.analyze_text("extends Node\n# @var x Control\nvar x: Node # trailing\n", "res://tests/tmp_var_d7.gd")), "trailing comment keeps narrow clean")
+	h.check(_has_err(h.analyze_text("extends Node\n# @var x Object\nvar x: Node # trailing\n", "res://tests/tmp_var_d8.gd"), "var_mismatch", "'Object' is neither 'Node'"), "trailing comment keeps widen mismatch")
 
 
 func _v_inference(h) -> void:
@@ -64,6 +66,8 @@ func _v_free(h) -> void:
 	h.check(_clean(h.analyze_text(attached, "res://tests/tmp_var_f3.gd")), "free attached clean")
 	var lam := "extends Node\nvar f = func():\n\tvar x: Node\n\t# @var x Control\n\n\tprint(x)\n"
 	h.check(_clean(h.analyze_text(lam, "res://tests/tmp_var_f4.gd")), "free inside lambda clean")
+	var trail := "extends Node\nfunc f():\n\t# @var x Object\n\tvar x: Node # trailing\n"
+	h.check(_has_err(h.analyze_text(trail, "res://tests/tmp_var_f5.gd"), "var_mismatch", "declared as 'Node'"), "free before-decl trailing mismatches")
 
 
 func _v_targets(h) -> void:

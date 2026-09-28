@@ -1019,6 +1019,9 @@ func _parse_type(stop: Array) -> Dictionary:
 			break
 		if t == "COMMA":
 			break
+		if t == "COMMENT" or t == "DOC_COMMENT" or t == "TYPE_INFO":
+			_pending_trivia.append(_advance())
+			continue
 		tokens.append(_advance())
 	return {"type": NODE_TYPE_REF, "tokens": tokens, "line": start["line"], "column": start["column"]}
 

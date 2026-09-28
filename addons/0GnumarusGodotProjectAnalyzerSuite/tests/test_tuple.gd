@@ -104,6 +104,7 @@ func _t_use(h) -> void:
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [1, \"a\"] # trailing note\n", "res://tests/tmp_tup_u7.gd")), "trailing comment keeps clean literal clean")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T1 1 int\n# @var x T1\nvar x: Array = [3.14]\n", "res://tests/tmp_tup_u8.gd"), "tuple_mismatch", "element 0 expects 'int', got 'float'"), "float narrowing mismatches")
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T1 1 float\n# @var x T1\nvar x: Array = [1]\n", "res://tests/tmp_tup_u9.gd")), "int widening clean")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Object # trailing\n", "res://tests/tmp_tup_u10.gd"), "var_mismatch", "is neither 'Object'"), "tuple vs Object trailing mismatches")
 
 
 func _t_index(h) -> void:
