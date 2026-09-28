@@ -53,7 +53,7 @@ Install from Project → Plugins and open any script:
 | Annotation | What it buys you |
 |---|---|
 | `@var` / `@param` / `@return` | Refine any declaration with unions (`Node\|null`), narrowing, generics; contradictions and mismatches error |
-| `@notnull` / `@nullable` markers | Per-slot never-null / watch-me contracts on any of the above |
+| `@not_null` / `@nullable` markers | Per-slot never-null / watch-me contracts on any of the above |
 | `@tuple` / `@struct` | Fixed-shape `Array`/`Dictionary` refinements with literal checking (length, keys, per-element types) |
 | `@alias` | Named reusable type expressions, nullable included |
 | `@template` / `@generic_class` | File-local type variables, bounds, per-call instantiation, generic classes |

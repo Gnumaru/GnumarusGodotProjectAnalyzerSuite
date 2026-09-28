@@ -6,7 +6,7 @@ extends RefCounted
 ## prove on-demand dependency analysis. Godot-valid on its own.
 
 
-# @param m Node notnull
+# @param m Node not_null
 func take(m: Node) -> void:
 	pass
 

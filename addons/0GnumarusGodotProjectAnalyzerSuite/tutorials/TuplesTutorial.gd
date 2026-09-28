@@ -1,4 +1,5 @@
 # please, enable line wrapping (alt+z) to propperly read the text.
+class_name TuplesTutorial
 
 # ================
 # ==== TUPLES ====
@@ -61,3 +62,21 @@ func tuple_usage()->void:
 	# actual array content is not tracked by the analyzer, but mutating method calls yield errors
 	e.push_back(0) # error: whould increase tuple size
 	e.pop_back() # error: whould decrease tuple size
+
+
+# please don't mind thesse bellow. I needed to put private members in another file to show them on MiscTutorial.gd so I did put them here
+
+# @private
+enum DepEnum{a}
+# @private
+const c=0
+# @private
+signal depsig
+# @private
+static var v_dep
+# @private
+static func fdep():
+	return
+# @private
+class DepClass:
+	pass

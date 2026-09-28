@@ -5,7 +5,7 @@ extends RefCounted
 ## through TmpRosterChild via the JSON extends chain.
 
 
-# @param m Node notnull
+# @param m Node not_null
 func take(m: Node) -> void:
 	pass
 

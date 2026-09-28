@@ -849,7 +849,9 @@ class Child extends Base:
   `user/*.json` flags: once a value is provably of another script
   class (an `is`-narrowed or explicitly typed variable, or a static
   `ClassName.member` access), calling/reading its private members
-  errors — different files are never the same family. Unknown
+  errors — different files are never the same family. Inner classes
+  count as members: `Other.PrivateInner` (read or `.new()`) errors
+  like any other private member. Unknown
   receivers stay silent (`var x: Variant` + `x._m()` only answers to
   the flow pass), as do public or undeclared members, so cross-file
   member checking otherwise behaves exactly as before. Only
@@ -1473,17 +1475,17 @@ Explicitly nullable values warn instead of staying silent: when a
 union with a `null` arm (direct, or via an alias expanding to one)
 resolves a member through another arm, `maybe_null` warns (`possible
 null call 'm()' on 'x' (nullable 'Node|null')`) — still a warning,
-never an error, and skipped under `notnull` marks and guards. Under
+never an error, and skipped under `not_null` marks and guards. Under
 the default trust policy, plain
 `Node` (implicitly nullable) stays silent: only written `|null`
 opt-ins warn.
 
-A trailing `notnull` marker on `@var`/`@param`/`@return`
-(`# @var x Node notnull`) declares the slot never-null: it is stored
+A trailing `not_null` marker on `@var`/`@param`/`@return`
+(`# @var x Node not_null`) declares the slot never-null: it is stored
 on the stamp, rejects nullable types (`Node|null`, bare `null` or an
 alias expanding to one) as malformed, errors `= null` initializers
 (including `self.x`), `null` defaults and `= null` reassignments
-(`var_notnull`, `param_notnull`), and is set by the non-null side of
+(`var_not_null`, `param_not_null`), and is set by the non-null side of
 `==`/`!=` guards
 (a plain redefinition without the marker clears it). Stamp and mark
 differ on writes: a stamp is a contract and errors `= null` in every
@@ -1492,27 +1494,27 @@ so `if impl != null: impl.close(); impl = null` (use-then-clear
 teardown) stays silent in trust. A flow refinement in scope
 (narrowed heads) suspends the stamp the same way a plain
 redefinition does. Call sites are
-checked too: passing a `null` literal to a notnull parameter errors
-(`param_notnull`) for bare, `self.`, same-file instance/static,
+checked too: passing a `null` literal to a not_null parameter errors
+(`param_not_null`) for bare, `self.`, same-file instance/static,
 `super` and lambda-held calls, one error per offending argument at
 its own line; maybe-null
 arguments stay silent in trust but warn in distrust (refusal
 direction below), template-typed parameters belong to generic
 machinery (no doubles), and cross-script calls resolve through the
-callee's `user/*.json` signature (`param_names`/`notnull_params`/
+callee's `user/*.json` signature (`param_names`/`not_null_params`/
 `nullable_params`/`return_types`/`nullable_return` maintained per
-method). `@return notnull` errors
+method). `@return not_null` errors
 `return null`
-(`return_notnull`, lambdas and redundant parentheses included); call
+(`return_not_null`, lambdas and redundant parentheses included); call
 results are trusted
-downstream — passing them to notnull parameters or using them needs
+downstream — passing them to not_null parameters or using them needs
 no guard.
 
 A trailing `nullable` marker on `@var`/`@param`/`@return`
 (`# @var x Node nullable`) declares the slot maybe-null and watches
 it: unguarded member use warns `maybe_null` in both policies
 (`possible null call 'm()' on 'x' (nullable 'Node')`). The marker is
-always optional and never combines with `notnull` (malformed), nor
+always optional and never combines with `not_null` (malformed), nor
 with `void`, nor with a type that can never hold null (`int
 nullable` is malformed); a `|null` arm or a nullable alias alongside
 it is simply redundant, never an error (alias content is invisible).
@@ -1534,7 +1536,7 @@ typeless members, `for` targets and `var` match bindings) warns
 'foo()' on 'p' (untyped 'p')`), as do subscripts on those slots
 (`possible null read '[]' on 'p' (untyped 'p')`). Totally unknown
 names stay silent
-(they are not slots), bare uses stay legal, and guards/`notnull`
+(they are not slots), bare uses stay legal, and guards/`not_null`
 marks still win; explicit `: Variant` member use keeps erroring
 `missing_method` by pre-existing design. Precedence mirrors the
 policy, first hit wins: file `# @strict_untyped` tag (`on`, bare,
@@ -1578,26 +1580,26 @@ IMPLICIT parameter of a trust callee warns at the argument
 (implicitly nullable)`). Silent when the caller is lenient, when the
 callee file is distrust (it warns at its own use sites — no
 doubles), when the parameter consents (`nullable`) or refuses
-(`notnull`, whose literal rule owns that direction), for stale JSONs
+(`not_null`, whose literal rule owns that direction), for stale JSONs
 without the keys (missing files are analyzed on demand first — see
 below), and for same-file calls (one file, one policy).
 The refusal direction is covered everywhere the literal rule is:
-same-file, `self.`, `super` and lambda-held `notnull` parameters
+same-file, `self.`, `super` and lambda-held `not_null` parameters
 warn on declared-maybe arguments in distrust
-(`possible null argument 'x' for notnull parameter 'c' of 'need()'`),
+(`possible null argument 'x' for not_null parameter 'c' of 'need()'`),
 literals included in the message but owned by the error; cross-script
-`notnull` warns the same way through the callee's JSON signature.
+`not_null` warns the same way through the callee's JSON signature.
 Under strict-untyped, declared-but-untyped arguments join both
-directions (`... (untyped)`), still never under a `notnull` mark or
+directions (`... (untyped)`), still never under a `not_null` mark or
 guard. Trust keeps the historical silence in all these positions
 (literals still error in both).
 
 Reassignments invalidate flow memory (all policies — this is runtime
 truth, not suspicion): `x = null` sets exact-null heads, so a later
-`x.foo()` errors `null_access` even for nullable slots (a `notnull`
+`x.foo()` errors `null_access` even for nullable slots (a `not_null`
 target errors at the write first, then the use reports the resulting
 null too); provably-non-null writes (value/array/dict literals,
-`self`, `X.new()`, calls to `notnull`-returning functions) revert to
+`self`, `X.new()`, calls to `not_null`-returning functions) revert to
 the declaration and, in distrust only, mark non-null (trust keeps
 incidental state silent — only explicit user checks, i.e. guard
 marks, establish intent there); any other write fully resets
@@ -1614,7 +1616,7 @@ other modes stay silent).
 
 Type tests prove non-null: `if v is Node:` runs the holding branch
 on a non-null value (proven against the engine: `null is Node` is
-false), so the branch gains the notnull mark — `while v is Node:`
+false), so the branch gains the not_null mark — `while v is Node:`
 and `if v is not Node: return` guard clauses work the same way.
 `is_instance_of` and non-nil `typeof` tests count; `x is Variant`
 proves nothing (`null is Variant` is true) and NIL forms belong to
@@ -1687,7 +1689,7 @@ it never pollutes the project tree):
   `Outer.Inner.json`, …). The analyzer adds `"private"` /
   `"deprecated"` flags on members plus per-file `analysis_errors` /
   `analysis_warnings`, maintains per-method `"param_names"` /
-  `"notnull_params"` / `"nullable_params"` / `"return_types"` /
+  `"not_null_params"` / `"nullable_params"` / `"return_types"` /
   `"nullable_return"` signatures, the file-level `"null_policy"` and
   the `"extends"` head for cross-script call-site checks,
   and merges newly declared members into the
@@ -1728,7 +1730,8 @@ suites still print, so the marker alone could look green).
   `test_classdb_merge.gd` (ClassDB completion),
   `test_doc_fetch.gd` (doc XML enums/constants, offline-safe),
   `test_deprecated.gd` (`@deprecated` rule), `test_private.gd`
-  (`@private` nested-family rule), `test_return.gd` (`@return` rule,
+  (`@private` nested-family rule, including cross-file private inner
+  classes), `test_return.gd` (`@return` rule,
   including literal `return` values against tuple/struct members),
   `test_var.gd` (`@var` rule), `test_param.gd` (`@param` rule),
   `test_tuple.gd` (`@tuple` rule, including mutating-method checks),
@@ -1781,11 +1784,11 @@ suites still print, so the marker alone could look green).
   `test_null.gd` (nullability: `null` union arms and compat, reserved
   `null` names, `==`/`!=` narrowing, exact-null access errors and
   generic bound violations on null arguments),
-  `test_notnull.gd` (trailing `notnull`: parse, contradiction,
+  `test_not_null.gd` (trailing `not_null`: parse, contradiction,
   `= null` violations, guard-set flags, redefinition clearing,
   stamp-vs-mark write split (distrust errors, trust companions),
   call-site checks, fine coverage and cross-script signatures),
-  `test_nullable.gd` (trailing `nullable`: parse, `notnull` /
+  `test_nullable.gd` (trailing `nullable`: parse, `not_null` /
   never-nullable contradiction, trust opt-in warnings, `@return
   nullable` taint, distrust policy, guard clauses,
   `nullable_params` / `return_types` JSON, ProjectSetting,

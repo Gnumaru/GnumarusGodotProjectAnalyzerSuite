@@ -174,15 +174,15 @@ var filler := 0 # ERROR on the tag above: missing @end_alias
 
 
 # @alias ShowMaybeNode Node|null @end_alias
-# @var nn_node Node notnull
+# @var nn_node Node not_null
 var nn_node: Node
 
 
 func nn_demo() -> void:
-	nn_node = null # ERROR: cannot assign null to notnull
+	nn_node = null # ERROR: cannot assign null to not_null
 
 
-# @param p Node notnull
+# @param p Node not_null
 func need_node(p: Node = null): # ERROR on the tag above: null default
 	pass
 
@@ -192,7 +192,7 @@ func call_demo() -> void:
 	need_node(Node.new()) # OK
 
 
-# @return Node notnull
+# @return Node not_null
 func make_node() -> Node:
 	return null # ERROR: cannot return null
 

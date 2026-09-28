@@ -8,7 +8,7 @@ extends RefCounted
 
 
 class Inner:
-	# @param m Node notnull
+	# @param m Node not_null
 	func take(m: Node) -> void:
 		pass
 
@@ -17,7 +17,7 @@ class Inner:
 
 
 class Base2:
-	# @param m Node notnull
+	# @param m Node not_null
 	func grp(m: Node) -> void:
 		pass
 

@@ -31,7 +31,7 @@ func marked_use() -> void:
 	watched.queue_free() # WARNING: explicitly watched
 
 
-# @var trusted Node notnull
+# @var trusted Node not_null
 var trusted: Node
 
 
@@ -49,12 +49,12 @@ func taint_demo() -> void:
 	r.queue_free() # WARNING: tainted result
 
 
-# @param p Node notnull
+# @param p Node not_null
 func need(p: Node) -> void:
 	pass
 
 
 func refusal_demo() -> void:
-	need(watched) # WARNING: maybe argument for notnull parameter
-	need(null) # ERROR: null literal for notnull parameter
+	need(watched) # WARNING: maybe argument for not_null parameter
+	need(null) # ERROR: null literal for not_null parameter
 	need(Node.new()) # OK

@@ -129,7 +129,7 @@ func _n_maybe(h) -> void:
 	var rd := "extends RefCounted\n# @var x Node|null\nvar x: Node\nfunc f() -> void:\n\tprint(x.name)\n"
 	h.check(h.has_warn(h.analyze_text(rd, "res://tests/tmp_null_m3.gd"), "possible null read"), "union read warns")
 	h.check(not _has_warn_kind(h.analyze_text("extends RefCounted\n# @var x Node|null\nvar x: Node\nfunc f() -> void:\n\tif x != null:\n\t\tx.queue_free()\n", "res://tests/tmp_null_m4.gd"), "maybe_null"), "guarded silent")
-	h.check(not _has_warn_kind(h.analyze_text("extends RefCounted\n# @var x Node notnull\nvar x: Node\nfunc f() -> void:\n\tx.queue_free()\n", "res://tests/tmp_null_m5.gd"), "maybe_null"), "flagged silent")
+	h.check(not _has_warn_kind(h.analyze_text("extends RefCounted\n# @var x Node not_null\nvar x: Node\nfunc f() -> void:\n\tx.queue_free()\n", "res://tests/tmp_null_m5.gd"), "maybe_null"), "flagged silent")
 	h.check(not _has_warn_kind(h.analyze_text("extends RefCounted\nfunc f(n: Node) -> void:\n\tn.queue_free()\n", "res://tests/tmp_null_m6.gd"), "maybe_null"), "plain Node silent")
 	h.check(h.has_warn(h.analyze_text("extends RefCounted\n# @alias MN2 Node|null @end_alias\n# @var x MN2\nvar x: Variant\nfunc f() -> void:\n\tx.queue_free()\n", "res://tests/tmp_null_m7.gd"), "possible null"), "alias union warns")
 	h.check(_has_err(h.analyze_text("extends RefCounted\n# @var x null\nvar x: Variant\nfunc f() -> void:\n\tx.queue_free()\n", "res://tests/tmp_null_m8.gd"), "null_access", "on null"), "exact null still errors")

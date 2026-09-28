@@ -5,7 +5,7 @@ extends RefCounted
 ## Proves the resolve-stack guard terminates mutual references.
 
 
-# @param m Node notnull
+# @param m Node not_null
 static func pong(m: Node) -> void:
 	pass
 

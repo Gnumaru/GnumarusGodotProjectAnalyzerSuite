@@ -94,7 +94,7 @@ func _r_demand(h) -> void:
 	_drop_json("TmpRosterMid")
 	var caller := "extends RefCounted\nfunc g() -> void:\n\tTmpRosterTarget.take(null)\n"
 	var cold: Dictionary = h.analyze_text(caller, "res://tests/tmp_rs_d1.gd")
-	h.check(_has_err(cold, "param_notnull", "'m'"), "on-demand literal errors")
+	h.check(_has_err(cold, "param_not_null", "'m'"), "on-demand literal errors")
 	h.check(_has_json("TmpRosterTarget"), "on-demand writes dep json")
 	var info: Dictionary = h.load_json(USER_DIR + "TmpRosterTarget.json")
 	var names: Array = []
@@ -115,7 +115,7 @@ func _r_cycle(h) -> void:
 	_drop_json("TmpRosterCycleA")
 	_drop_json("TmpRosterCycleB")
 	var a_cold: Dictionary = _analyze_file(CYCLE_A_PATH)
-	h.check(_has_err(a_cold, "param_notnull", "'m'"), "cycle A errors via B")
+	h.check(_has_err(a_cold, "param_not_null", "'m'"), "cycle A errors via B")
 	h.check(_has_json("TmpRosterCycleA") and _has_json("TmpRosterCycleB"), "cycle writes both")
 	var b_warm: Dictionary = _analyze_file(CYCLE_B_PATH)
 	_drop_json("TmpRosterCycleA")
@@ -136,7 +136,7 @@ func _r_depth(h) -> void:
 	h.check(not _has_json("TmpRosterTarget"), "blocked demand writes nothing")
 	H.Analyzer._resolve_stack.clear()
 	var freed: Dictionary = h.analyze_text(caller, "res://tests/tmp_rs_p2.gd")
-	h.check(_has_err(freed, "param_notnull", "'m'"), "cleared stack analyzes")
+	h.check(_has_err(freed, "param_not_null", "'m'"), "cleared stack analyzes")
 
 
 func _r_inherit(h) -> void:
@@ -145,7 +145,7 @@ func _r_inherit(h) -> void:
 	var compat := "extends RefCounted\n# @var x TmpRosterChild\nvar x: TmpRosterParent\n"
 	h.check(_clean(h.analyze_text(compat, "res://tests/tmp_rs_h1.gd")), "cross-file derives silent")
 	var refusal := "extends RefCounted\nfunc g() -> void:\n\tTmpRosterChild.take(null)\n"
-	h.check(_has_err(h.analyze_text(refusal, "res://tests/tmp_rs_h2.gd"), "param_notnull", "'m'"), "inherited refusal errors")
+	h.check(_has_err(h.analyze_text(refusal, "res://tests/tmp_rs_h2.gd"), "param_not_null", "'m'"), "inherited refusal errors")
 	var info: Dictionary = h.load_json(USER_DIR + "TmpRosterChild.json")
 	h.check(str(info.get("extends", "")) == "TmpRosterParent", "json records extends")
 	var priv := "extends RefCounted\nfunc g(v: Variant) -> void:\n\tif v is TmpRosterChild:\n\t\tv.hid()\n"
@@ -171,11 +171,11 @@ func _r_inner(h) -> void:
 	_drop_json("TmpRosterOuter")
 	_drop_json("TmpRosterOuter.Inner")
 	var lit := "extends RefCounted\nfunc g(x: TmpRosterOuter.Inner) -> void:\n\tx.take(null)\n"
-	h.check(_has_err(h.analyze_text(lit, "res://tests/tmp_rs_k1.gd"), "param_notnull", "'m'"), "dotted inner refusal errors")
+	h.check(_has_err(h.analyze_text(lit, "res://tests/tmp_rs_k1.gd"), "param_not_null", "'m'"), "dotted inner refusal errors")
 	var ok := "extends RefCounted\nfunc g(x: TmpRosterOuter.Inner) -> void:\n\tx.take(Node.new())\n"
 	h.check(_clean(h.analyze_text(ok, "res://tests/tmp_rs_k2.gd")), "dotted inner non-null clean")
 	var pref := "extends RefCounted\nfunc g(x: TmpRosterOuter.Kid2) -> void:\n\tx.grp(null)\n"
-	h.check(_has_err(h.analyze_text(pref, "res://tests/tmp_rs_k3.gd"), "param_notnull", "'m'"), "prefix fallback refusal errors")
+	h.check(_has_err(h.analyze_text(pref, "res://tests/tmp_rs_k3.gd"), "param_not_null", "'m'"), "prefix fallback refusal errors")
 	h.check(H.Analyzer._roster_class_for_path("res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/TmpRosterOuter.gd") == "TmpRosterOuter", "reverse prefers top-level")
 
 
@@ -183,7 +183,7 @@ func _r_quoted(h) -> void:
 	_drop_json("TmpRosterParent")
 	_drop_json("TmpRosterQuoted")
 	var lit := "extends RefCounted\nfunc g() -> void:\n\tTmpRosterQuoted.take(null)\n"
-	h.check(_has_err(h.analyze_text(lit, "res://tests/tmp_rs_e1.gd"), "param_notnull", "'m'"), "quoted walk refusal errors")
+	h.check(_has_err(h.analyze_text(lit, "res://tests/tmp_rs_e1.gd"), "param_not_null", "'m'"), "quoted walk refusal errors")
 	h.check(str(H.Analyzer._roster_extends.get("TmpRosterQuoted", "")).begins_with("\"res://"), "roster keeps quoted head")
 	var rel: Array = H.Analyzer._parent_candidates("TmpRosterOuter.Kid2", "\"Foo.gd\"")
 	h.check(rel == ["res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/Foo.gd"], "relative joins file dir")
@@ -199,7 +199,7 @@ func _r_dotted(h) -> void:
 	var narrow := "extends RefCounted\nfunc g(v: Variant) -> void:\n\tif v is TmpRosterOuter.Inner:\n\t\tv.take(Node.new())\n"
 	h.check(_clean(h.analyze_text(narrow, "res://tests/tmp_rs_w3.gd")), "dotted is narrows clean")
 	var lit := "extends RefCounted\nfunc g(v: Variant) -> void:\n\tif v is TmpRosterOuter.Inner:\n\t\tv.take(null)\n"
-	h.check(_has_err(h.analyze_text(lit, "res://tests/tmp_rs_w4.gd"), "param_notnull", "'m'"), "dotted is refusal errors")
+	h.check(_has_err(h.analyze_text(lit, "res://tests/tmp_rs_w4.gd"), "param_not_null", "'m'"), "dotted is refusal errors")
 	var grab := "extends RefCounted\nfunc g(v: Variant) -> void:\n\tif v is Nope VCC:\n\t\tpass\n"
 	var rg: Dictionary = h.analyze_text(grab, "res://tests/tmp_rs_w5.gd")
 	h.check(_clean(rg) and (rg.get("warnings", []) as Array).is_empty(), "garbage is silent")
@@ -211,15 +211,15 @@ func _r_super(h) -> void:
 	_drop_json("TmpRosterParent")
 	_drop_json("TmpRosterQuoted")
 	var lit := "extends TmpRosterParent\nfunc f() -> void:\n\tsuper.take(null)\n"
-	h.check(_has_err(h.analyze_text(lit, "res://tests/tmp_rs_u1.gd"), "param_notnull", "'m'"), "super literal errors")
+	h.check(_has_err(h.analyze_text(lit, "res://tests/tmp_rs_u1.gd"), "param_not_null", "'m'"), "super literal errors")
 	var imp := "extends TmpRosterParent\n# @var x Node nullable\nvar x: Node\nfunc f() -> void:\n\tsuper.plain(x)\n"
 	var ri: Dictionary = h.analyze_text(imp, "res://tests/tmp_rs_u2.gd", "distrust")
 	h.check(_clean(ri) and h.has_warn(ri, "possible null argument 'x'"), "super implicit warns")
 	h.check(h.warn_texts(h.analyze_text(imp, "res://tests/tmp_rs_u3.gd")).is_empty(), "super implicit trust silent")
 	var may := "extends TmpRosterParent\n# @var x Node nullable\nvar x: Node\nfunc f() -> void:\n\tsuper.take(x)\n"
-	h.check(h.has_warn(h.analyze_text(may, "res://tests/tmp_rs_u4.gd", "distrust"), "for notnull parameter 'm'"), "super maybe warns")
+	h.check(h.has_warn(h.analyze_text(may, "res://tests/tmp_rs_u4.gd", "distrust"), "for not_null parameter 'm'"), "super maybe warns")
 	var qtrust: Dictionary = _analyze_file("res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/TmpRosterQuoted.gd")
-	h.check(_has_err(qtrust, "param_notnull", "'m'"), "quoted super literal errors")
+	h.check(_has_err(qtrust, "param_not_null", "'m'"), "quoted super literal errors")
 	h.check((qtrust.get("warnings", []) as Array).is_empty(), "quoted super trust silent")
 	var qdis: Dictionary = _analyze_file("res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/TmpRosterQuoted.gd", "distrust")
 	h.check(h.has_warn(qdis, "possible null argument 'qx'"), "quoted super implicit warns")

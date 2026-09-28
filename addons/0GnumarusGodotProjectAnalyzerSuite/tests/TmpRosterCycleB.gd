@@ -4,7 +4,7 @@ extends RefCounted
 ## Cycle fixture (B side): references TmpRosterCycleA and back.
 
 
-# @param m Node notnull
+# @param m Node not_null
 static func ping(m: Node) -> void:
 	pass
 

@@ -86,8 +86,8 @@ var smaybe_node: Variant = null # OK
 # @alias StressBroken int|float
 var sfiller := 0 # ERROR on the tag above: missing end marker
 
-# @var snotnull_bad StressMaybeNode notnull
-var snotnull_bad: Variant = null # ERROR on the tag above: contradicts nullable type, plus null init rejected
+# @var snot_null_bad StressMaybeNode not_null
+var snot_null_bad: Variant = null # ERROR on the tag above: contradicts nullable type, plus null init rejected
 
 # @var snullable_ok StressMaybeNode nullable
 var snullable_ok: Variant = null # OK: redundant marker stays silent
@@ -207,7 +207,7 @@ func cross_demo(s2: Variant) -> void:
 		s2.old_api() # WARNING: deprecated member from another file
 		s2._my_private_func() # ERROR: private member from another file
 		print(s2._secret) # ERROR: private field from another file
-		s2.need_node(null) # ERROR: null argument to notnull parameter
+		s2.need_node(null) # ERROR: null argument to not_null parameter
 		s2.need_node(Node.new()) # OK
 
 
@@ -265,8 +265,8 @@ func multi_param_demo(
 	print(ma) # OK
 
 
-# @return void notnull
-func void_notnull_demo() -> void:
+# @return void not_null
+func void_not_null_demo() -> void:
 	pass # ERROR on the tag above: void cannot combine
 
 
@@ -313,11 +313,11 @@ var nullonly: Variant = null # OK: exactly null
 
 # Notnull slots: initializers, defaults, reassignments, call sites.
 
-# @var nn_init Node notnull
-var nn_init: Node = null # ERROR on the tag above: cannot assign null to notnull variable
+# @var nn_init Node not_null
+var nn_init: Node = null # ERROR on the tag above: cannot assign null to not_null variable
 
 
-# @param nn_param Node notnull
+# @param nn_param Node not_null
 func need_it(nn_param: Node = null): # ERROR on the tag above: null default
 	pass
 
@@ -326,7 +326,7 @@ func nn_reassign_demo() -> void:
 	nn_init = null # ERROR: cannot assign null
 
 
-# @param nn_arg Node notnull
+# @param nn_arg Node not_null
 func take_arg(nn_arg: Node) -> void:
 	pass
 
@@ -338,7 +338,7 @@ func nn_call_demo() -> void:
 
 
 class NnBase:
-	# @param nx Node notnull
+	# @param nx Node not_null
 	func m(nx: Node) -> void:
 		pass
 
@@ -348,18 +348,18 @@ class NnKid extends NnBase:
 		super.m(null) # ERROR: null argument
 
 
-# @return Node notnull
+# @return Node not_null
 func make_nn() -> Node:
 	return null # ERROR: cannot return null
 
 
-# @return Node notnull
+# @return Node not_null
 func make_nn_ok() -> Node:
 	return Node.new() # OK
 
 
 func nn_downstream_demo() -> void:
-	take_arg(make_nn_ok()) # OK: notnull results trusted
+	take_arg(make_nn_ok()) # OK: not_null results trusted
 
 
 # Nullable slots and result taint.

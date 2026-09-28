@@ -185,6 +185,18 @@ func _f_cross_script(h) -> void:
 	# A local shadowing the class name keeps today's silence.
 	var res5: Dictionary = h.analyze_text("extends RefCounted\nfunc g(TmpPrivCrossLib) -> void:\n\tTmpPrivCrossLib._hidden()\n", "res://tests/tmp_priv_cross_shadow.gd")
 	h.check(h.priv_errors(res5).is_empty(), "shadowing param suppresses cross check")
+	# Private inner classes report on every cross-file access form;
+	# public inners stay silent.
+	var lib6 := "class_name TmpPrivCrossInnerLib\nextends RefCounted\n# @private\nclass Hidden:\n\tpass\nclass Shown:\n\tpass\n"
+	h.analyze_text(lib6, "res://tests/tmp_priv_cross_inner_lib.gd")
+	var res6: Dictionary = h.analyze_text("extends RefCounted\nfunc g() -> void:\n\tprint(TmpPrivCrossInnerLib.Hidden)\n\tTmpPrivCrossInnerLib.Hidden.new()\n", "res://tests/tmp_priv_cross_inner.gd")
+	var inner_lines: Array = []
+	for e in h.priv_errors(res6):
+		inner_lines.append(int((e as Dictionary).get("line", 0)))
+	h.check(inner_lines == [3, 4], "private inner read and new are violations")
+	h.check(h.has_priv(res6, "TmpPrivCrossInnerLib.Hidden"), "cross message names inner class")
+	var res7: Dictionary = h.analyze_text("extends RefCounted\nfunc g() -> void:\n\tprint(TmpPrivCrossInnerLib.Shown)\n\tTmpPrivCrossInnerLib.Shown.new()\n", "res://tests/tmp_priv_cross_inner_pub.gd")
+	h.check(h.priv_errors(res7).is_empty(), "public inner cross-file silent")
 
 
 func _f_no_local_leak(h) -> void:
