@@ -1071,6 +1071,19 @@ func f():
   duplicates and name clashes with script/engine types error
   (`tuple_conflict`); bad shapes error (`tuple_malformed`,
   `tuple_unknown_type`, `tuple_mismatch`, `tuple_bounds`).
+- Reassignments to tuple slots take literals only (`tuple_mismatch`
+  otherwise — shape without value tracking, mirroring the
+  declaration rule: `d = e` errors even when `e` could conform).
+- Tuples are immutable values: indices stay writable while the
+  type fits, but shape/order-changing Array methods on a
+  tuple-typed value error `tuple_mutate` (`push_back/front`,
+  `pop_back/front/at`, `append`, `append_array`, `insert`,
+  `remove_at`, `erase`, `clear`, `resize`, `assign`, `sort`,
+  `sort_custom`, `shuffle`, `reverse` — order is type, so sorting
+  breaks it too). `set(i, v)` / `fill(v)` keep shape and run the
+  `[]`-store element rule instead (same `tuple_mismatch` texts);
+  readers (`duplicate`, `slice`, `size`, …) and `make_read_only`
+  stay silent, as do plain `Array`s.
 - Templates share `user/` with classes (one global type namespace)
   as `kind: "tuple"` JSONs (compatible keys plus `size` and
   `tuple_items`).
@@ -1703,7 +1716,7 @@ suites still print, so the marker alone could look green).
   (`@private` nested-family rule), `test_return.gd` (`@return` rule,
   including literal `return` values against tuple/struct members),
   `test_var.gd` (`@var` rule), `test_param.gd` (`@param` rule),
-  `test_tuple.gd` (`@tuple` rule),
+  `test_tuple.gd` (`@tuple` rule, including mutating-method checks),
   `test_type_expr.gd` (nested type-expression mini-parser + tuple
   applications),
   `test_alias.gd` (`@alias` rule),

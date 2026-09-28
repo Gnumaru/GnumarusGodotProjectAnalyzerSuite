@@ -134,6 +134,7 @@ const ERR_TUPLE_UNKNOWN_TYPE := "tuple_unknown_type"
 const ERR_TUPLE_CONFLICT := "tuple_conflict"
 const ERR_TUPLE_MISMATCH := "tuple_mismatch"
 const ERR_TUPLE_BOUNDS := "tuple_bounds"
+const ERR_TUPLE_MUTATE := "tuple_mutate"
 const ERR_ALIAS_MISPLACED := "alias_misplaced"
 const ERR_ALIAS_MALFORMED := "alias_malformed"
 const ERR_ALIAS_UNKNOWN_TYPE := "alias_unknown_type"
@@ -1789,6 +1790,13 @@ func _lit_compatible(et: String, mname: String) -> bool:
 	if et in ["String", "StringName", "NodePath"] and mname in ["String", "StringName", "NodePath"]:
 		return true
 	return _derives_from(et, mname)
+
+
+## Array methods that change a tuple's element count or order
+## (per the Godot Array docs; `set`/`fill` keep shape and go through
+## the store rule instead, readers never mutate). Called on a
+## tuple-typed value, any of these is a tuple_mutate error.
+const TUPLE_SHAPE_METHODS := ["append", "append_array", "assign", "clear", "erase", "insert", "pop_at", "pop_back", "pop_front", "push_back", "push_front", "remove_at", "resize", "reverse", "shuffle", "sort", "sort_custom"]
 
 
 ## Checks an initializer value against a tuple vartype (length +
@@ -9820,6 +9828,8 @@ func _verify_chain(tokens: Array, i: int, scope: Dictionary, owner: String, fn: 
 				continue
 			if str(L.get("kind", "")) == "tuple":
 				var tname := str(L.get("name", ""))
+				if is_call:
+					_check_tuple_mutator(tname, seg, tokens, j, owner)
 				var av := _verify_seg(["Array"], seg, is_call, false, tokens[j], owner, true)
 				var avt := str(av.get("vtype", ""))
 				if avt != "":
@@ -11380,17 +11390,19 @@ func _flow_assign_stmt(node: Dictionary, scope: Dictionary, fn: Variant, env: Di
 	_check_null_assign(toks, node, scope, fn, env, owner)
 	var tt := _trim_trivia(toks)
 	_check_index_assign(tt, fn, scope, env, owner)
+	var vname := ""
+	var target := {}
 	if tt.size() >= 3 and (tt[0] is Dictionary) and str((tt[0] as Dictionary).get("type", "")) == "IDENTIFIER" and (tt[1] is Dictionary) and str((tt[1] as Dictionary).get("type", "")) == "OPERATOR" and str((tt[1] as Dictionary).get("value", "")) == "=":
 		_apply_assign_invalidation(str((tt[0] as Dictionary).get("value", "")), tt.slice(2), scope, fn, env, owner)
+		vname = str((tt[0] as Dictionary).get("value", ""))
+		target = _assign_target(vname, fn, scope, owner, env, int((tt[0] as Dictionary).get("line", 0)))
+		_check_assign_nominal(target, toks.slice(2), int((tt[0] as Dictionary).get("line", 0)), owner)
 	if toks.size() < 4:
 		return
 	if not (toks[0] is Dictionary) or str((toks[0] as Dictionary).get("type", "")) != "IDENTIFIER":
 		return
 	if not (toks[1] is Dictionary) or str((toks[1] as Dictionary).get("type", "")) != "OPERATOR" or str((toks[1] as Dictionary).get("value", "")) != "=":
 		return
-	var vname := str((toks[0] as Dictionary).get("value", ""))
-	var target := _assign_target(vname, fn, scope, owner, env, int((toks[0] as Dictionary).get("line", 0)))
-	_check_assign_nominal(target, toks.slice(2), int((toks[0] as Dictionary).get("line", 0)), owner)
 	_flow_assign_call(vname, toks.slice(2), target, scope, fn, env, owner)
 	_check_call_assign(vname, toks.slice(2), target, scope, fn, env, owner)
 
@@ -11398,6 +11410,8 @@ func _flow_assign_stmt(node: Dictionary, scope: Dictionary, fn: Variant, env: Di
 ## Literal checks of an `x = [...]` / `x = {...}` reassignment RHS
 ## against the target's nominal tuple/struct types (declared vartype
 ## plus @var/@param members, like declaration initializers):
+## tuple slots take literals only (no value tracking — a variable,
+## call or complex RHS errors even when it could conform);
 ## non-literals skip, dynamic/unknown targets stay silent.
 ## Never fails.
 func _check_assign_nominal(target: Dictionary, rhs: Array, line: int, owner: String) -> void:
@@ -11408,8 +11422,23 @@ func _check_assign_nominal(target: Dictionary, rhs: Array, line: int, owner: Str
 		if ms == "" or seen.has(ms):
 			continue
 		seen[ms] = true
-		_check_tuple_value(ms, {"tokens": rhs}, line, owner)
+		_check_tuple_reassign(ms, rhs, line, owner)
 		_check_struct_value(ms, {"tokens": rhs}, line, owner)
+
+
+## Reassignment value against one tuple-typed slot: literals run the
+## element rule, anything else errors (tuples only receive literal
+## value assignments — shape without value tracking, mirroring the
+## declaration rule). Unknown names stay silent. Never fails.
+func _check_tuple_reassign(tname: String, rhs: Array, line: int, owner: String) -> void:
+	var def := _tuple_def(tname)
+	if def.is_empty():
+		return
+	var lit := _tuple_lit_split({"tokens": rhs})
+	if not bool(lit.get("literal", false)):
+		_error(ERR_TUPLE_MISMATCH, "tuple '" + tname + "' can only be assigned a literal value", line, 0, owner)
+		return
+	_check_tuple_elements(tname, def, lit.get("elements", []), line, owner)
 
 
 ## Element-type check of a `tup[INT] = <literal>` indexed store
@@ -11443,21 +11472,78 @@ func _check_index_assign(tt: Array, fn: Variant, scope: Dictionary, env: Diction
 	var size := int(full.get("size", 0))
 	if idx < 0:
 		idx += size
-	if idx < 0 or idx >= size:
+	_check_tuple_element(tname, full, idx, rhs, int((tt[0] as Dictionary).get("line", 0)), owner)
+
+
+## Mutating Array calls on a tuple-typed value: shape/order
+## changers error unconditionally (tuple_mutate); `set`/`fill` keep
+## shape and run the []-store element rule instead (same
+## kinds/messages). Anything else (readers, unknown names) stays
+## silent here — the Array delegation below owns it. Never fails.
+func _check_tuple_mutator(tname: String, seg: String, tokens: Array, j: int, owner: String) -> void:
+	if seg == "set" or seg == "fill":
+		_check_tuple_method_store(tname, seg, tokens, j, owner)
 		return
+	if seg in TUPLE_SHAPE_METHODS:
+		_error(ERR_TUPLE_MUTATE, "cannot call '" + seg + "()' on tuple '" + tname + "' (tuples are fixed-shape)", int((tokens[j] as Dictionary).get("line", 0)), int((tokens[j] as Dictionary).get("column", 0)), owner)
+
+
+## `tup.set(i, v)` / `tup.fill(v)` stores: the []-store element rule
+## through method syntax. `set` needs exactly 2 argument slices with
+## a literal int index in range (negatives and exotic shapes stay
+## silent — the engine owns them, unlike [] which wraps); `fill`
+## checks one literal value against every slot, first failure only.
+## Anything else stays silent (arity belongs to the Array check).
+## Never fails.
+func _check_tuple_method_store(tname: String, seg: String, tokens: Array, j: int, owner: String) -> void:
+	if j + 1 >= tokens.size() or not (tokens[j + 1] is Dictionary) or str((tokens[j + 1] as Dictionary).get("type", "")) != "LPAREN":
+		return
+	var slices := _split_arg_slices(tokens, j + 1)
+	var full := _tuple_def(tname)
+	if full.is_empty():
+		return
+	var line := int((tokens[j] as Dictionary).get("line", 0))
+	if seg == "set":
+		if slices.size() != 2:
+			return
+		var idx_toks := _trim_trivia(slices[0])
+		if idx_toks.size() != 1 or not (idx_toks[0] is Dictionary) or str((idx_toks[0] as Dictionary).get("type", "")) != "INT":
+			return
+		var idx := int(str((idx_toks[0] as Dictionary).get("value", "0")))
+		if idx < 0 or idx >= int(full.get("size", 0)):
+			return
+		_check_tuple_element(tname, full, idx, slices[1], line, owner)
+	elif seg == "fill":
+		if slices.size() != 1:
+			return
+		for idx in range(int(full.get("size", 0))):
+			if _check_tuple_element(tname, full, idx, slices[0], line, owner):
+				return
+
+
+## Single-slot element check shared by `tup[i] = v` stores and the
+## `set`/`fill` method twins (same kinds/messages: tuple_mismatch on
+## a wrong literal type). Out-of-bounds indexes, non-literal values,
+## dynamic bases and `any` slots stay silent (read-side bounds and
+## the engine own the rest). Returns true when it reported.
+func _check_tuple_element(tname: String, full: Dictionary, idx: int, rhs: Array, line: int, owner: String) -> bool:
+	var size := int(full.get("size", 0))
+	if idx < 0 or idx >= size:
+		return false
 	var items: Array = full.get("items", [])
 	if idx >= items.size() or not (items[idx] is Dictionary):
-		return
+		return false
 	var item: Dictionary = items[idx]
 	if bool(item.get("any", false)):
-		return
+		return false
 	var et := _infer_lit_elem(_trim_trivia(rhs))
 	if et == "":
-		return
+		return false
 	for m in item.get("types", []):
 		if _lit_compatible(et, str(m)):
-			return
-	_error(ERR_TUPLE_MISMATCH, "tuple '" + tname + "' element " + str(idx) + " expects '" + _show_types(item.get("types", [])) + "', got '" + et + "'", int((tt[0] as Dictionary).get("line", 0)), 0, owner)
+			return false
+	_error(ERR_TUPLE_MISMATCH, "tuple '" + tname + "' element " + str(idx) + " expects '" + _show_types(item.get("types", [])) + "', got '" + et + "'", line, 0, owner)
+	return true
 
 
 ## Errors `vname = null` (bare null literal, trailing notes ignored)

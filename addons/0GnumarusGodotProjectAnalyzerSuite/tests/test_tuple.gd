@@ -18,6 +18,7 @@ func run() -> Dictionary:
 	_t_use(h)
 	_t_index(h)
 	_t_store(h)
+	_t_mutate(h)
 	_t_members(h)
 	_t_json(h)
 	return h.result()
@@ -111,7 +112,9 @@ func _t_use(h) -> void:
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array\n", "res://tests/tmp_tup_u15.gd"), "tuple_mismatch", "must be initialized with a compatible literal"), "missing init demands literal")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Variant\n", "res://tests/tmp_tup_u16.gd"), "tuple_mismatch", "must be initialized with a compatible literal"), "variant decl demands literal")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d\n", "res://tests/tmp_tup_u17.gd"), "tuple_mismatch", "must be initialized with a compatible literal"), "bare decl demands literal")
-	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\tvar e := [1]\n\td = e\n", "res://tests/tmp_tup_u14.gd")), "reassign non-literal silent")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\tvar e := [1]\n\td = e\n", "res://tests/tmp_tup_u14.gd"), "tuple_mismatch", "can only be assigned a literal value"), "reassign variable demands literal")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int int\nfunc f():\n\t# @var a0 T2\n\tvar a0: Array = [0, 0]\n\tvar g: Array = []\n\ta0 = g\n", "res://tests/tmp_tup_u18.gd"), "tuple_mismatch", "can only be assigned a literal value"), "reassign incompatible array demands literal")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int int\nfunc f():\n\t# @var a0 T2\n\tvar a0: Array = [0, 0]\n\ta0 = mk()\n", "res://tests/tmp_tup_u19.gd"), "tuple_mismatch", "can only be assigned a literal value"), "reassign call demands literal")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Object # trailing\n", "res://tests/tmp_tup_u10.gd"), "var_mismatch", "is neither 'Object'"), "tuple vs Object trailing mismatches")
 
 
@@ -132,6 +135,22 @@ func _t_store(h) -> void:
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\tvar e := \"b\"\n\td[0] = e\n", "res://tests/tmp_tup_s6.gd")), "non-literal store silent")
 	h.check(_clean(h.analyze_text("extends Node\nfunc f():\n\tvar d := [1, \"a\"]\n\td[0] = \"b\"\n", "res://tests/tmp_tup_s7.gd")), "untyped base silent")
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td[0] += 1\n", "res://tests/tmp_tup_s8.gd")), "compound store silent")
+
+
+func _t_mutate(h) -> void:
+	var head := "extends Node\n# @tuple T2 2 int int\nfunc f():\n\t# @var a0 T2\n\tvar a0: Array = [0, 0]\n"
+	for m in ["push_back(1)", "push_front(1)", "pop_back()", "pop_front()", "append(1)", "append_array([1])", "insert(0, 1)", "remove_at(0)", "erase(0)", "clear()", "resize(5)", "assign([1, 2])", "sort()", "sort_custom(func(a, b): return a < b)", "shuffle()", "reverse()", "pop_at(0)"]:
+		h.check(_has_err(h.analyze_text(head + "\ta0." + m + "\n", "res://tests/tmp_tup_mx.gd"), "tuple_mutate", "fixed-shape"), "shape method mutates: " + m)
+	h.check(_has_err(h.analyze_text(head + "\ta0.set(0, '')\n", "res://tests/tmp_tup_ms1.gd"), "tuple_mismatch", "element 0 expects 'int', got 'String'"), "set wrong type mismatches like store")
+	h.check(_clean(h.analyze_text(head + "\ta0.set(1, 5)\n", "res://tests/tmp_tup_ms2.gd")), "set conforming clean")
+	h.check(_clean(h.analyze_text(head + "\ta0.set(9, 5)\n", "res://tests/tmp_tup_ms3.gd")), "set oob silent")
+	h.check(_clean(h.analyze_text(head + "\tvar i := 0\n\ta0.set(i, '')\n", "res://tests/tmp_tup_ms4.gd")), "set dynamic index silent")
+	h.check(_clean(h.analyze_text(head + "\tvar v := ''\n\ta0.set(0, v)\n", "res://tests/tmp_tup_ms5.gd")), "set dynamic value silent")
+	h.check(_has_err(h.analyze_text(head + "\ta0.fill('')\n", "res://tests/tmp_tup_mf1.gd"), "tuple_mismatch", "element 0 expects 'int', got 'String'"), "fill wrong type mismatches")
+	h.check(_clean(h.analyze_text(head + "\ta0.fill(3)\n", "res://tests/tmp_tup_mf2.gd")), "fill conforming clean")
+	h.check(_clean(h.analyze_text("extends Node\nfunc f():\n\tvar a: Array = [0, 0]\n\ta.push_back(1)\n\ta.set(0, '')\n", "res://tests/tmp_tup_mp.gd")), "plain Array untouched")
+	h.check(_clean(h.analyze_text(head + "\tvar b: Array = a0.duplicate()\n", "res://tests/tmp_tup_md.gd")), "readers untouched")
+	h.check(_clean(h.analyze_text(head + "\ta0.make_read_only()\n", "res://tests/tmp_tup_mr.gd")), "read-only freeze untouched")
 
 
 func _t_members(h) -> void:
