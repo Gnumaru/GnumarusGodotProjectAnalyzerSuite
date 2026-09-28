@@ -1247,8 +1247,10 @@ func other():
 - Vartypes (and `->` returns, and params) holding brackets validate
   against `@generic_class` classes: unknown or non-generic heads stay
   silent (engine generics like `Array[int]` keep working); arity and
-  template bounds on arguments error `generic_mismatch`. Bounds are
-  subtyping-aware: an argument fits when nominally compatible with
+  template bounds on arguments error `generic_mismatch`. Dotted
+  applications resolve like simple ones (`A.C[Node]` reads the
+  `generic` list off the inner class, with the script class standing
+  in for the root table). Bounds are subtyping-aware: an argument fits when nominally compatible with
   any bound arm (derivation counts, so `Node` fits `Object`, and
   `Inner` fits `Object|int`), and extends-less script classes derive
   `RefCounted` (the engine default). Bare uses

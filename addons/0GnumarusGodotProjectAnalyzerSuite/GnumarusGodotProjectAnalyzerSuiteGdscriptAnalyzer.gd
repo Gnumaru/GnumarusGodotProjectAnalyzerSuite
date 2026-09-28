@@ -2935,7 +2935,10 @@ func _class_generic(key: String) -> Array:
 	var pname := str(parts[parts.size() - 1])
 	var pkey := ".".join(parts.slice(0, parts.size() - 1))
 	if not _members.has(pkey):
-		return []
+		if pkey == _script_class and _members.has(""):
+			pkey = ""
+		else:
+			return []
 	var rec: Dictionary = (_members[pkey] as Dictionary).get(pname, {})
 	if rec.is_empty():
 		return []
@@ -5617,6 +5620,8 @@ func _type_known(tname: String) -> bool:
 		var table: Dictionary = _members[key]
 		if table.has(tname) and str((table[tname] as Dictionary).get("kind", "")) in ["class", "enum"]:
 			return true
+	if _is_dotted_class(tname):
+		return true
 	if _roster_has(tname):
 		return true
 	if not _roster_swept and _project_root != "":
@@ -5632,6 +5637,33 @@ static func _base_simple(dotted: String) -> String:
 	if "." in dotted:
 		return dotted.substr(dotted.rfind(".") + 1)
 	return dotted
+
+
+## True when a dotted name addresses a script class/enum member
+## ("A.C", "A.B.C"): the parent path resolves to an owner scope
+## (the script class itself reads as the root table) holding the
+## tail as a class/enum. Unknown heads stay unknown. Instance.
+func _is_dotted_class(tname: String) -> bool:
+	if "." not in str(tname):
+		return false
+	var parts := str(tname).split(".")
+	var tail := str(parts[parts.size() - 1])
+	if tail == "":
+		return false
+	var scope := ".".join(parts.slice(0, parts.size() - 1))
+	var owner_key := ""
+	if scope == "" or scope == _script_class:
+		owner_key = ""
+	else:
+		owner_key = _resolve_private_owner(scope, "")
+	if owner_key == "" and not _members.has(""):
+		return false
+	if owner_key != "" and not _members.has(owner_key):
+		return false
+	var table: Dictionary = _members["" if owner_key == "" else owner_key]
+	if not table.has(tail):
+		return false
+	return str((table[tail] as Dictionary).get("kind", "")) in ["class", "enum"]
 
 
 ## Joins an EXTENDS path (token dicts with DOT separators) into a

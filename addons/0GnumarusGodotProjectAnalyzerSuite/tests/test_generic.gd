@@ -114,6 +114,11 @@ func _g_ann(h) -> void:
 	h.check(_has_err(h.analyze_text("extends Node\n# @template GxB8 of int\n# @generic_class GxB8\nclass GxBBox8:\n\tpass\nfunc f(\n\t# @param x GxBBox8[String]\n\tx\n):\n\tpass\n", "res://tests/tmp_ggx_b08.gd"), "generic_mismatch", "violates bound 'int' in @param"), "param bound violation errors")
 	h.check(_has_err(h.analyze_text("extends Node\n# @template GxB9 of int\n# @generic_class GxB9\nclass GxBBox9:\n\tpass\n# @return GxBBox9[String]\nfunc f():\n\tpass\n", "res://tests/tmp_ggx_b09.gd"), "generic_mismatch", "violates bound 'int' in @return"), "return bound violation errors")
 	h.check(_clean(h.analyze_text("extends Node\n# @template GxB10 of Object\n# @param x GxB10\nfunc gxtake(x):\n\tpass\nfunc f():\n\tvar n: Node\n\tself.gxtake(n)\n", "res://tests/tmp_ggx_b10.gd")), "call site subclass bound clean")
+	var dot_bad: Dictionary = h.analyze_text("class_name GxDot\n# @template GxDT of Node2D|Node3D\n# @generic_class GxDT\nclass GxDBox:\n\tpass\nfunc f():\n\t# @var d GxDot.GxDBox[Node]\n\tvar d: GxDot.GxDBox\n", "res://tests/tmp_ggx_b11.gd")
+	h.check(_has_err(dot_bad, "generic_mismatch", "violates bound 'Node2D|Node3D' in @var"), "dotted union bound violation errors")
+	h.check(_clean(h.analyze_text("class_name GxDot2\n# @template GxDT2 of Node2D|Node3D\n# @generic_class GxDT2\nclass GxDBox2:\n\tpass\nfunc f():\n\t# @var d GxDot2.GxDBox2[Node2D]\n\tvar d: GxDot2.GxDBox2\n", "res://tests/tmp_ggx_b12.gd")), "dotted conforming arm clean")
+	h.check(_clean(h.analyze_text("class_name GxDot3\n# @template GxDT3 of int\n# @generic_class GxDT3\nclass GxDBox3:\n\tpass\nfunc f():\n\t# @var d GxDot3.GxDBox3\n\tvar d: GxDot3.GxDBox3\n", "res://tests/tmp_ggx_b13.gd")), "dotted plain resolves")
+	h.check(_has_err(h.analyze_text("class_name GxDot4\n# @template GxDT4 of int\n# @generic_class GxDT4\nclass GxDBox4:\n\tpass\nfunc f():\n\t# @var d GxDot4.Nope[String]\n\tvar d: GxDot4.Nope\n", "res://tests/tmp_ggx_b14.gd"), "var_unknown_type", "GxDot4.Nope"), "dotted unknown stays unknown")
 
 
 func _g_json(h) -> void:

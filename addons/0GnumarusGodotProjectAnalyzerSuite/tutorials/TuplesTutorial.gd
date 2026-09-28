@@ -5,13 +5,14 @@
 # ================
 # A tuple is an array with fixed size and fixed type for each index.
 # You define a tuple in the following format:
-#
+
 # 	<annotation-name> <tuple-name> <size> <first-index-type> <second-index-type> ... <last-index-type>
-#
+
 # Like bellow
-# 	@tuple My2SlotTupleOfIntAndString 2 int String
-# 	@tuple My2SlotTupleOfIntAndInt 2 int int
-#
+
+# @tuple My2SlotTupleOfIntAndString 2 int String
+# @tuple My2SlotTupleOfIntAndInt 2 int int
+
 # The tuple size could be perfectly infered using the argument count but as a design choice I decided to make it explicit.
 # A declared tuple name (as all other type names except for generic argument names) is globaly valid. This means that a tuple name declared in one script is valid in all scripts in the same project. So you can declare it in one script and use it, for example, as a \@param in other script.
 
