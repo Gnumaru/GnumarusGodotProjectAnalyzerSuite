@@ -17,6 +17,7 @@ func run() -> Dictionary:
 	_t_sem(h)
 	_t_use(h)
 	_t_index(h)
+	_t_store(h)
 	_t_members(h)
 	_t_json(h)
 	return h.result()
@@ -54,9 +55,9 @@ func _sem_kinds(src: String, path: String) -> Array:
 
 
 func _t_def(h) -> void:
-	h.check(_clean(h.analyze_text("extends Node\n# @tuple TupleName 5 int|String float|bool Object Variant *\n# @var x TupleName\nvar x: Array\n", "res://tests/tmp_tup_d1.gd")), "full example clean")
-	h.check(_clean(h.analyze_text("extends Node\n# @tuple Inner2 1 int\n# @tuple Outer2 2 Inner2 String\n# @var x Outer2\nvar x: Array\n", "res://tests/tmp_tup_d2.gd")), "nested tuple clean")
-	h.check(_clean(h.analyze_text("extends Node\n# @tuple Outer2 2 Inner2 String\n# @tuple Inner2 1 int\n# @var x Outer2\nvar x: Array\n", "res://tests/tmp_tup_d3.gd")), "forward nested ref clean")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple TupleName 5 int|String float|bool Object Variant *\n# @var x TupleName\nvar x: Array = [1, 2.0, null, null, null]\n", "res://tests/tmp_tup_d1.gd")), "full example clean")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple Inner2 1 int\n# @tuple Outer2 2 Inner2 String\n# @var x Outer2\nvar x: Array = [[1], \"a\"]\n", "res://tests/tmp_tup_d2.gd")), "nested tuple clean")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple Outer2 2 Inner2 String\n# @tuple Inner2 1 int\n# @var x Outer2\nvar x: Array = [[1], \"a\"]\n", "res://tests/tmp_tup_d3.gd")), "forward nested ref clean")
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple E 0\n# @var x E\nvar x: Array = []\n", "res://tests/tmp_tup_d4.gd")), "empty tuple clean")
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T 2 * variant\n# @var x T\nvar x: Array = [1, \"a\"]\n", "res://tests/tmp_tup_d5.gd")), "any and unknown markers clean")
 
@@ -66,7 +67,7 @@ func _t_def_errors(h) -> void:
 	h.check(_kinds(h.analyze_text("extends Node\n# @tuple T int String\nvar x: T\n", "res://tests/tmp_tup_e2.gd")).has("tuple_malformed"), "missing count malformed")
 	h.check(_kinds(h.analyze_text("extends Node\n# @tuple\nvar x := 1\n", "res://tests/tmp_tup_e3.gd")).has("tuple_malformed"), "empty malformed")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T 1 void\nvar x: T\n", "res://tests/tmp_tup_e4.gd"), "tuple_malformed", "invalid type"), "void malformed")
-	h.check(_clean(h.analyze_text("extends Node\n# @tuple T 1 object\n# @var x T\nvar x: Array\n", "res://tests/tmp_tup_e5b.gd")), "lowercase object corrected")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple T 1 object\n# @var x T\nvar x: Array = [null]\n", "res://tests/tmp_tup_e5b.gd")), "lowercase object corrected")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T 1 Nope\nvar x: T\n", "res://tests/tmp_tup_e6.gd"), "tuple_unknown_type", "'Nope'"), "unknown item errors")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T 1 int\n# @tuple T 1 int\nvar x: T\n", "res://tests/tmp_tup_e7.gd"), "tuple_conflict", "more than once"), "duplicate conflicts")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple Item 1 int\nclass Item:\n\tpass\n", "res://tests/tmp_tup_e8.gd"), "tuple_conflict", "script member"), "class conflict")
@@ -98,12 +99,19 @@ func _t_use(h) -> void:
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [1, \"a\"]\n", "res://tests/tmp_tup_u1.gd")), "conforming literal clean")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [1, 2, 3]\n", "res://tests/tmp_tup_u2.gd"), "tuple_mismatch", "expects 2 elements, got 3"), "wrong length mismatches")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [\"a\", \"b\"]\n", "res://tests/tmp_tup_u3.gd"), "tuple_mismatch", "element 0"), "wrong element mismatches")
-	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nvar arr := [1]\n# @var x T2\nvar x: Array = arr\n", "res://tests/tmp_tup_u4.gd")), "analyzer silent on non-literal")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nvar arr := [1]\n# @var x T2\nvar x: Array = arr\n", "res://tests/tmp_tup_u4.gd"), "tuple_mismatch", "must be initialized with a compatible literal"), "non-literal init demands literal")
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [foo(), \"a\"]\n", "res://tests/tmp_tup_u5.gd")), "complex element skipped")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [1, 2, 3] # trailing note\n", "res://tests/tmp_tup_u6.gd"), "tuple_mismatch", "expects 2 elements, got 3"), "trailing comment keeps mismatch")
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [1, \"a\"] # trailing note\n", "res://tests/tmp_tup_u7.gd")), "trailing comment keeps clean literal clean")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T1 1 int\n# @var x T1\nvar x: Array = [3.14]\n", "res://tests/tmp_tup_u8.gd"), "tuple_mismatch", "element 0 expects 'int', got 'float'"), "float narrowing mismatches")
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T1 1 float\n# @var x T1\nvar x: Array = [1]\n", "res://tests/tmp_tup_u9.gd")), "int widening clean")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td = [1]\n", "res://tests/tmp_tup_u11.gd"), "tuple_mismatch", "expects 2 elements, got 1"), "reassign size mismatches")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td = [\"a\", 1]\n", "res://tests/tmp_tup_u12.gd"), "tuple_mismatch", "element 0 expects 'int'"), "reassign element mismatches")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td = [2, \"b\"]\n", "res://tests/tmp_tup_u13.gd")), "reassign conforming clean")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array\n", "res://tests/tmp_tup_u15.gd"), "tuple_mismatch", "must be initialized with a compatible literal"), "missing init demands literal")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Variant\n", "res://tests/tmp_tup_u16.gd"), "tuple_mismatch", "must be initialized with a compatible literal"), "variant decl demands literal")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d\n", "res://tests/tmp_tup_u17.gd"), "tuple_mismatch", "must be initialized with a compatible literal"), "bare decl demands literal")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\tvar e := [1]\n\td = e\n", "res://tests/tmp_tup_u14.gd")), "reassign non-literal silent")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Object # trailing\n", "res://tests/tmp_tup_u10.gd"), "var_mismatch", "is neither 'Object'"), "tuple vs Object trailing mismatches")
 
 
@@ -112,6 +120,18 @@ func _t_index(h) -> void:
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [1, \"a\"]\nfunc f():\n\tprint(x[5])\n", "res://tests/tmp_tup_i2.gd"), "tuple_bounds", "out of bounds"), "oob errors")
 	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [1, \"a\"]\nfunc f(i):\n\tprint(x[i])\n", "res://tests/tmp_tup_i3.gd")), "dynamic index skips")
 	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\n# @var x T2\nvar x: Array = [1, \"a\"]\nfunc f():\n\tprint(x[\"k\"])\n", "res://tests/tmp_tup_i4.gd"), "tuple_bounds", "indexed by int"), "string index errors")
+
+
+func _t_store(h) -> void:
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td[0] = 2\n", "res://tests/tmp_tup_s1.gd")), "conforming store clean")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td[-1] = \"b\"\n", "res://tests/tmp_tup_s2.gd")), "negative store clean")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td[0] = \"b\"\n", "res://tests/tmp_tup_s3.gd"), "tuple_mismatch", "element 0 expects 'int', got 'String'"), "store type mismatches")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td[-2] = \"b\"\n", "res://tests/tmp_tup_s4.gd"), "tuple_mismatch", "element 0 expects 'int'"), "negative store mismatches")
+	h.check(_has_err(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td[2] = 1\n", "res://tests/tmp_tup_s5.gd"), "tuple_bounds", "out of bounds"), "oob store bounds errors")
+	h.check(not _kinds(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td[2] = 1\n", "res://tests/tmp_tup_s5.gd")).has("tuple_mismatch"), "oob store never double reports")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\tvar e := \"b\"\n\td[0] = e\n", "res://tests/tmp_tup_s6.gd")), "non-literal store silent")
+	h.check(_clean(h.analyze_text("extends Node\nfunc f():\n\tvar d := [1, \"a\"]\n\td[0] = \"b\"\n", "res://tests/tmp_tup_s7.gd")), "untyped base silent")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple T2 2 int String\nfunc f():\n\t# @var d T2\n\tvar d: Array = [1, \"a\"]\n\td[0] += 1\n", "res://tests/tmp_tup_s8.gd")), "compound store silent")
 
 
 func _t_members(h) -> void:

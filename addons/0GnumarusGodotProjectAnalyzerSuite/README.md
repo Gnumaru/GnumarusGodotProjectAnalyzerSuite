@@ -1059,9 +1059,14 @@ func f():
   `Variant` or untyped declarations through `@var`/`@param`/
   `@return`, but `var x: Pair` is `virtual_vartype` (use the pattern
   above). A tuple narrows `Array` (and `Variant`/dynamic accept
-  anything); an `Array` flows in only as a conforming literal
-  (checked at `var`/`const` declarations, via the annotation too);
-  different tuple names never mix (nominal typing).
+  anything); an `Array` flows in only as a conforming literal.
+  Declarations must create the tuple with a compatible literal:
+  a missing or non-literal initializer errors `tuple_mismatch`
+  (unlike arrays, tuples cannot be created empty). The same
+  literal rule applies to `x = [...]` reassignments and
+  `t[i] = <literal>` indexed stores (out-of-bounds indexes stay
+  `tuple_bounds`, owned by the read side); non-literal stores stay
+  silent. Different tuple names never mix (nominal typing).
   Definitions live top-level only (`tuple_misplaced` elsewhere);
   duplicates and name clashes with script/engine types error
   (`tuple_conflict`); bad shapes error (`tuple_malformed`,

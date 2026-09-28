@@ -1792,13 +1792,18 @@ func _lit_compatible(et: String, mname: String) -> bool:
 
 
 ## Checks an initializer value against a tuple vartype (length +
-## per-index literal elements). Non-literals skip (unprovable).
-func _check_tuple_value(tname: String, value: Variant, line: int, owner: String) -> void:
+## per-index literal elements). Non-literals skip (unprovable) unless
+## is_init: declarations must create a tuple with a compatible
+## literal (unlike arrays, tuples cannot start empty), so a missing
+## or non-literal initializer errors instead of staying silent.
+func _check_tuple_value(tname: String, value: Variant, line: int, owner: String, is_init := false) -> void:
 	var def := _tuple_def(tname)
 	if def.is_empty():
 		return
 	var lit := _tuple_lit_split(value)
 	if not bool(lit.get("literal", false)):
+		if is_init:
+			_error(ERR_TUPLE_MISMATCH, "tuple '" + tname + "' must be initialized with a compatible literal where it is declared (unlike arrays, tuples cannot be created empty)", line, 0, owner)
 		return
 	_check_tuple_elements(tname, def, lit.get("elements", []), line, owner)
 
@@ -1812,7 +1817,7 @@ func _check_nominal_values(d: Dictionary, value: Variant, line: int, owner: Stri
 	var vt := _vartype_name(d)
 	if vt != "":
 		seen[vt] = true
-		_check_tuple_value(vt, value, line, owner)
+		_check_tuple_value(vt, value, line, owner, true)
 		_check_struct_value(vt, value, line, owner)
 	var ann: Dictionary = d.get("var_ann", {})
 	for m in (ann.get("types", []) as Array):
@@ -1820,7 +1825,7 @@ func _check_nominal_values(d: Dictionary, value: Variant, line: int, owner: Stri
 		if ms == "" or seen.has(ms):
 			continue
 		seen[ms] = true
-		_check_tuple_value(ms, value, line, owner)
+		_check_tuple_value(ms, value, line, owner, true)
 		_check_struct_value(ms, value, line, owner)
 
 
@@ -11374,6 +11379,7 @@ func _flow_assign_stmt(node: Dictionary, scope: Dictionary, fn: Variant, env: Di
 	var toks := _as_tokens(node.get("expr", null))
 	_check_null_assign(toks, node, scope, fn, env, owner)
 	var tt := _trim_trivia(toks)
+	_check_index_assign(tt, fn, scope, env, owner)
 	if tt.size() >= 3 and (tt[0] is Dictionary) and str((tt[0] as Dictionary).get("type", "")) == "IDENTIFIER" and (tt[1] is Dictionary) and str((tt[1] as Dictionary).get("type", "")) == "OPERATOR" and str((tt[1] as Dictionary).get("value", "")) == "=":
 		_apply_assign_invalidation(str((tt[0] as Dictionary).get("value", "")), tt.slice(2), scope, fn, env, owner)
 	if toks.size() < 4:
@@ -11384,8 +11390,74 @@ func _flow_assign_stmt(node: Dictionary, scope: Dictionary, fn: Variant, env: Di
 		return
 	var vname := str((toks[0] as Dictionary).get("value", ""))
 	var target := _assign_target(vname, fn, scope, owner, env, int((toks[0] as Dictionary).get("line", 0)))
+	_check_assign_nominal(target, toks.slice(2), int((toks[0] as Dictionary).get("line", 0)), owner)
 	_flow_assign_call(vname, toks.slice(2), target, scope, fn, env, owner)
 	_check_call_assign(vname, toks.slice(2), target, scope, fn, env, owner)
+
+
+## Literal checks of an `x = [...]` / `x = {...}` reassignment RHS
+## against the target's nominal tuple/struct types (declared vartype
+## plus @var/@param members, like declaration initializers):
+## non-literals skip, dynamic/unknown targets stay silent.
+## Never fails.
+func _check_assign_nominal(target: Dictionary, rhs: Array, line: int, owner: String) -> void:
+	if (target as Dictionary).is_empty() or rhs.is_empty():
+		return
+	var seen := {}
+	for ms in _slot_type_names(target):
+		if ms == "" or seen.has(ms):
+			continue
+		seen[ms] = true
+		_check_tuple_value(ms, {"tokens": rhs}, line, owner)
+		_check_struct_value(ms, {"tokens": rhs}, line, owner)
+
+
+## Element-type check of a `tup[INT] = <literal>` indexed store
+## against the tuple slot (a leading `-` wraps from the end, like
+## reads): out-of-bounds indexes stay silent here (the read-side
+## bounds check owns them) as do non-literal values, dynamic bases
+## and `any` slots — mirrors the per-element init rule. Never fails.
+func _check_index_assign(tt: Array, fn: Variant, scope: Dictionary, env: Dictionary, owner: String) -> void:
+	var base := ""
+	var idx := 0
+	var rhs: Array = []
+	if tt.size() >= 6 and (tt[0] is Dictionary) and str((tt[0] as Dictionary).get("type", "")) == "IDENTIFIER" and (tt[1] is Dictionary) and str((tt[1] as Dictionary).get("type", "")) == "LBRACKET" and (tt[2] is Dictionary) and str((tt[2] as Dictionary).get("type", "")) == "INT" and (tt[3] is Dictionary) and str((tt[3] as Dictionary).get("type", "")) == "RBRACKET" and (tt[4] is Dictionary) and str((tt[4] as Dictionary).get("type", "")) == "OPERATOR" and str((tt[4] as Dictionary).get("value", "")) == "=":
+		base = str((tt[0] as Dictionary).get("value", ""))
+		idx = int(str((tt[2] as Dictionary).get("value", "0")))
+		rhs = tt.slice(5)
+	elif tt.size() >= 7 and (tt[0] is Dictionary) and str((tt[0] as Dictionary).get("type", "")) == "IDENTIFIER" and (tt[1] is Dictionary) and str((tt[1] as Dictionary).get("type", "")) == "LBRACKET" and (tt[2] is Dictionary) and str((tt[2] as Dictionary).get("type", "")) == "OPERATOR" and str((tt[2] as Dictionary).get("value", "")) == "-" and (tt[3] is Dictionary) and str((tt[3] as Dictionary).get("type", "")) == "INT" and (tt[4] is Dictionary) and str((tt[4] as Dictionary).get("type", "")) == "RBRACKET" and (tt[5] is Dictionary) and str((tt[5] as Dictionary).get("type", "")) == "OPERATOR" and str((tt[5] as Dictionary).get("value", "")) == "=":
+		base = str((tt[0] as Dictionary).get("value", ""))
+		idx = -int(str((tt[3] as Dictionary).get("value", "0")))
+		rhs = tt.slice(6)
+	else:
+		return
+	if base == "" or base == "_":
+		return
+	var def := _tuple_base_def(base, fn, scope, owner, env, {})
+	if def.is_empty():
+		return
+	var tname := str(def.get("name", ""))
+	var full := _tuple_def(tname)
+	if full.is_empty():
+		return
+	var size := int(full.get("size", 0))
+	if idx < 0:
+		idx += size
+	if idx < 0 or idx >= size:
+		return
+	var items: Array = full.get("items", [])
+	if idx >= items.size() or not (items[idx] is Dictionary):
+		return
+	var item: Dictionary = items[idx]
+	if bool(item.get("any", false)):
+		return
+	var et := _infer_lit_elem(_trim_trivia(rhs))
+	if et == "":
+		return
+	for m in item.get("types", []):
+		if _lit_compatible(et, str(m)):
+			return
+	_error(ERR_TUPLE_MISMATCH, "tuple '" + tname + "' element " + str(idx) + " expects '" + _show_types(item.get("types", [])) + "', got '" + et + "'", int((tt[0] as Dictionary).get("line", 0)), 0, owner)
 
 
 ## Errors `vname = null` (bare null literal, trailing notes ignored)

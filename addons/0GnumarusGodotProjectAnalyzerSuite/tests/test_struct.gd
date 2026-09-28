@@ -99,6 +99,9 @@ func _s_use(h) -> void:
 	h.check(_clean(h.analyze_text("extends Node\n# @struct S 2 a:int b:String\n# @var x S\nvar x: Dictionary = {\"a\": 1, \"b\": \"s\"} # trailing note\n", "res://tests/tmp_st_u8.gd")), "trailing comment keeps clean literal clean")
 	h.check(_has_err(h.analyze_text("extends Node\n# @struct S 1 a:int\n# @var x S\nvar x: Dictionary = {\"a\": 3.14}\n", "res://tests/tmp_st_u9.gd"), "struct_mismatch", "field 'a' expects 'int', got 'float'"), "float narrowing mismatches")
 	h.check(_clean(h.analyze_text("extends Node\n# @struct S 1 a:float\n# @var x S\nvar x: Dictionary = {\"a\": 1}\n", "res://tests/tmp_st_u10.gd")), "int widening clean")
+	h.check(_has_err(h.analyze_text("extends Node\n# @struct S 2 a:int b:String\nfunc f():\n\t# @var x S\n\tvar x: Dictionary = {\"a\": 1, \"b\": \"s\"}\n\tx = {\"a\": 1}\n", "res://tests/tmp_st_u11.gd"), "struct_mismatch", "expects 2 fields, got 1"), "reassign missing key mismatches")
+	h.check(_has_err(h.analyze_text("extends Node\n# @struct S 2 a:int b:String\nfunc f():\n\t# @var x S\n\tvar x: Dictionary = {\"a\": 1, \"b\": \"s\"}\n\tx = {\"a\": \"s\", \"b\": \"s\"}\n", "res://tests/tmp_st_u12.gd"), "struct_mismatch", "field 'a' expects 'int'"), "reassign value mismatches")
+	h.check(_clean(h.analyze_text("extends Node\n# @struct S 2 a:int b:String\nfunc f():\n\t# @var x S\n\tvar x: Dictionary = {\"a\": 1, \"b\": \"s\"}\n\tx = {\"a\": 2, \"b\": \"t\"}\n", "res://tests/tmp_st_u13.gd")), "reassign conforming clean")
 
 
 func _s_keys_members(h) -> void:
@@ -112,7 +115,7 @@ func _s_keys_members(h) -> void:
 
 func _s_canon(h) -> void:
 	h.check(_clean(h.analyze_text("extends Node\n# @struct S 1 a:string\n# @var x S\nvar x: Dictionary\n", "res://tests/tmp_st_c1.gd")), "lowercase field type corrected")
-	h.check(_clean(h.analyze_text("extends Node\n# @tuple T 1 object\n# @var x T\nvar x: Array\n", "res://tests/tmp_st_c2.gd")), "lowercase tuple item corrected")
+	h.check(_clean(h.analyze_text("extends Node\n# @tuple T 1 object\n# @var x T\nvar x: Array = [null]\n", "res://tests/tmp_st_c2.gd")), "lowercase tuple item corrected")
 	h.check(_clean(h.analyze_text("extends Node\n# @return object\nfunc f():\n\tpass\n", "res://tests/tmp_st_c3.gd")), "lowercase return corrected")
 
 
