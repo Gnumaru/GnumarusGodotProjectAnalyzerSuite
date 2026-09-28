@@ -57,15 +57,15 @@ func _n_grammar(h) -> void:
 	h.check(_clean(h.analyze_text("extends RefCounted\n# @return Node|null\nfunc f():\n\tpass\n", "res://tests/tmp_null_g08.gd")), "return null arm clean")
 	h.check(_clean(h.analyze_text("extends RefCounted\n# @return null\nfunc f():\n\treturn null\n", "res://tests/tmp_null_g09.gd")), "return null clean")
 	h.check(_has_err(h.analyze_text("extends RefCounted\n# @return null\nfunc f() -> int:\n\treturn 1\n", "res://tests/tmp_null_g10.gd"), "return_mismatch", "'null'"), "return null against int arrow mismatches")
-	h.check(_clean(h.analyze_text("extends RefCounted\n# @alias MaybeNode Node|null @endalias\n# @var x MaybeNode\nvar x: Variant\n", "res://tests/tmp_null_g11.gd")), "alias with null arm clean")
-	h.check(_has_err(h.analyze_text("extends RefCounted\n# @alias MaybeNode Node|null @endalias\n# @var x MaybeNode\nvar x := 1\n", "res://tests/tmp_null_g12.gd"), "var_mismatch", "'null'"), "alias null arm against int mismatches")
+	h.check(_clean(h.analyze_text("extends RefCounted\n# @alias MaybeNode Node|null @end_alias\n# @var x MaybeNode\nvar x: Variant\n", "res://tests/tmp_null_g11.gd")), "alias with null arm clean")
+	h.check(_has_err(h.analyze_text("extends RefCounted\n# @alias MaybeNode Node|null @end_alias\n# @var x MaybeNode\nvar x := 1\n", "res://tests/tmp_null_g12.gd"), "var_mismatch", "'null'"), "alias null arm against int mismatches")
 
 
 func _n_reserved(h) -> void:
 	h.check(_kinds(h.analyze_text("extends RefCounted\n# @tuple null 1 int\n", "res://tests/tmp_null_r1.gd")).has("tuple_conflict"), "tuple named null conflicts")
 	h.check(_kinds(h.analyze_text("extends RefCounted\n# @struct null 1 x:int\n", "res://tests/tmp_null_r2.gd")).has("struct_conflict"), "struct named null conflicts")
-	h.check(_kinds(h.analyze_text("extends RefCounted\n# @alias null int @endalias\n", "res://tests/tmp_null_r3.gd")).has("alias_conflict"), "alias named null conflicts")
-	h.check(_kinds(h.analyze_text("extends RefCounted\n# @interface null\n# func:f:void\n# @endinterface\n", "res://tests/tmp_null_r4.gd")).has("interface_conflict"), "interface named null conflicts")
+	h.check(_kinds(h.analyze_text("extends RefCounted\n# @alias null int @end_alias\n", "res://tests/tmp_null_r3.gd")).has("alias_conflict"), "alias named null conflicts")
+	h.check(_kinds(h.analyze_text("extends RefCounted\n# @interface null\n# func:f:void\n# @end_interface\n", "res://tests/tmp_null_r4.gd")).has("interface_conflict"), "interface named null conflicts")
 	h.check(_kinds(h.analyze_text("extends RefCounted\n# @template null\n", "res://tests/tmp_null_r5.gd")).has("template_conflict"), "template named null conflicts")
 
 
@@ -131,6 +131,6 @@ func _n_maybe(h) -> void:
 	h.check(not _has_warn_kind(h.analyze_text("extends RefCounted\n# @var x Node|null\nvar x: Node\nfunc f() -> void:\n\tif x != null:\n\t\tx.queue_free()\n", "res://tests/tmp_null_m4.gd"), "maybe_null"), "guarded silent")
 	h.check(not _has_warn_kind(h.analyze_text("extends RefCounted\n# @var x Node notnull\nvar x: Node\nfunc f() -> void:\n\tx.queue_free()\n", "res://tests/tmp_null_m5.gd"), "maybe_null"), "flagged silent")
 	h.check(not _has_warn_kind(h.analyze_text("extends RefCounted\nfunc f(n: Node) -> void:\n\tn.queue_free()\n", "res://tests/tmp_null_m6.gd"), "maybe_null"), "plain Node silent")
-	h.check(h.has_warn(h.analyze_text("extends RefCounted\n# @alias MN2 Node|null @endalias\n# @var x MN2\nvar x: Variant\nfunc f() -> void:\n\tx.queue_free()\n", "res://tests/tmp_null_m7.gd"), "possible null"), "alias union warns")
+	h.check(h.has_warn(h.analyze_text("extends RefCounted\n# @alias MN2 Node|null @end_alias\n# @var x MN2\nvar x: Variant\nfunc f() -> void:\n\tx.queue_free()\n", "res://tests/tmp_null_m7.gd"), "possible null"), "alias union warns")
 	h.check(_has_err(h.analyze_text("extends RefCounted\n# @var x null\nvar x: Variant\nfunc f() -> void:\n\tx.queue_free()\n", "res://tests/tmp_null_m8.gd"), "null_access", "on null"), "exact null still errors")
 

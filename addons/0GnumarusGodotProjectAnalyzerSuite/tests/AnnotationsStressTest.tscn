@@ -75,14 +75,14 @@ func struct_read_demo() -> void:
 
 # Aliases: use, null arms, broken blocks, contradictions.
 
-# @alias StressNum int|float @endalias
+# @alias StressNum int|float @end_alias
 # @var snum_ok StressNum
 var snum_ok: Variant = 2 # OK: dynamic slots skip narrowing
 
 # @var snum_bad StressNum
 var snum_bad := \"a\" # ERROR on the tag above: neither arm fits String
 
-# @alias StressMaybeNode Node|null @endalias
+# @alias StressMaybeNode Node|null @end_alias
 # @var smaybe_node StressMaybeNode
 var smaybe_node: Variant = null # OK
 
@@ -132,7 +132,7 @@ func generic_demo() -> void:
 
 # @interface StressDrawable
 # func:ping:void
-# @endinterface
+# @end_interface
 
 
 # @implements StressDrawable

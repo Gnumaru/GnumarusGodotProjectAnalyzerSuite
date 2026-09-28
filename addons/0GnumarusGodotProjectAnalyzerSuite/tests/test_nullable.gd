@@ -75,7 +75,7 @@ func _nb_clash(h) -> void:
 	h.check(_has_err(h.analyze_text("extends RefCounted\n# @param p int nullable\nfunc f(p: int):\n\tpass\n", "res://tests/tmp_nb_c2.gd"), "param_malformed", "non-nullable"), "param nullable int malformed")
 	h.check(_has_err(h.analyze_text("extends RefCounted\n# @return int nullable\nfunc f() -> int:\n\tpass\n", "res://tests/tmp_nb_c3.gd"), "return_malformed", "non-nullable"), "return nullable int malformed")
 	h.check(_clean(h.analyze_text("extends RefCounted\n# @var x Node|null nullable\nvar x: Variant\n", "res://tests/tmp_nb_c4.gd")), "nullable null-arm redundant clean")
-	h.check(_clean(h.analyze_text("extends RefCounted\n# @alias MaybeN Node|null @endalias\n# @var x MaybeN nullable\nvar x: Variant\n", "res://tests/tmp_nb_c5.gd")), "nullable alias clean")
+	h.check(_clean(h.analyze_text("extends RefCounted\n# @alias MaybeN Node|null @end_alias\n# @var x MaybeN nullable\nvar x: Variant\n", "res://tests/tmp_nb_c5.gd")), "nullable alias clean")
 	h.check(_clean(h.analyze_text("extends RefCounted\n# @var x Node nullable\nvar x: Node\n", "res://tests/tmp_nb_c6.gd")), "nullable plain Node clean")
 
 
@@ -148,7 +148,7 @@ func _nb_distrust(h) -> void:
 	h.check(_has_err(rv, "missing_method", "'foo()'") and h.warn_texts(rv).is_empty(), "distrust Variant unchanged missing_method")
 	var marked := "extends RefCounted\n# @var x Node notnull\nvar x: Node\nfunc f() -> void:\n\tx.queue_free()\n"
 	h.check(h.warn_texts(h.analyze_text(marked, "res://tests/tmp_nb_d10.gd", "distrust")).is_empty(), "distrust notnull clean")
-	var alias := "extends RefCounted\n# @alias N2 Node @endalias\n# @var x N2\nvar x: Variant\nfunc f() -> void:\n\tx.queue_free()\n"
+	var alias := "extends RefCounted\n# @alias N2 Node @end_alias\n# @var x N2\nvar x: Variant\nfunc f() -> void:\n\tx.queue_free()\n"
 	h.check(h.has_warn(h.analyze_text(alias, "res://tests/tmp_nb_d11.gd", "distrust"), "implicitly nullable"), "distrust alias expands")
 
 

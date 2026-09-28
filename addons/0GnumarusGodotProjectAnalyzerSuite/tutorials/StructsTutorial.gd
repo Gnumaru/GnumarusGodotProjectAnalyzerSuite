@@ -60,7 +60,9 @@ func struct_usage()->void:
 	e.set('age', '') # key 'age' type type is incompatible with string
 	var f = e.asdf # trying to get an unexisting index is also an error
 	f = e['asdf']
+	# structs are NOT imutable, only their 'shape' is imutable, so you can always change the values as long as the types are compatible
+	e.age = 90
 
 	# actual dictionary content is not tracked by the analyzer, but mutating method calls yield errors
-	e.clear() # error: whould decrease struct size
-	e.erase('age') # error: whould decrease struct size
+	e.clear() # error: would decrease struct size
+	e.erase('age') # error: would decrease struct size

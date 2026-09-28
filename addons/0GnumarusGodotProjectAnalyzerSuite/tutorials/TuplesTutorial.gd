@@ -47,6 +47,8 @@ func tuple_usage()->void:
 	# or throughout the code
 	e = [1] # wrong size
 	e = ['', 1] # wrong index types
+	# tuples are NOT imutable, only their 'shape' is imutable, so you can always change the values as long as the types are compatible
+	e[0] = 90
 
 	# trying to set the indexes also yields errors
 	e[-3] = '' # trying to set unexisting index

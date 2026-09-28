@@ -77,7 +77,7 @@ extends RefCounted
 ## Named type templates share user/ with classes (one global type
 ## namespace) as kind-tagged JSONs: \@tuple (fixed-shape arrays),
 ## \@struct (fixed-key dictionaries) and \@interface (member blueprints
-## between \@interface Name and \@endinterface, single or multi-line).
+## between \@interface Name and \@end_interface, single or multi-line).
 ## Definitions live top-level only; duplicates and clashes error.
 ## Tuples/structs verify literals, index/key access and members;
 ## interfaces define blueprints and \@implements checks conformance
@@ -1116,7 +1116,7 @@ func _is_tag_char(c: int) -> bool:
 ## truth for the editor annotation tint): lines carrying one of these
 ## read as annotation lines. End tags included (their lines are
 ## annotation text even when stray).
-const ANNOTATION_TAGS := ["deprecated", "private", "nullable_policy", "strict_untyped", "return", "var", "param", "tuple", "struct", "alias", "template", "generic_class", "generic_func", "generic_call", "interface", "implements", "endinterface", "endalias"]
+const ANNOTATION_TAGS := ["deprecated", "private", "nullable_policy", "strict_untyped", "return", "var", "param", "tuple", "struct", "alias", "template", "generic_class", "generic_func", "generic_call", "interface", "implements", "end_interface", "end_alias"]
 
 
 ## 1-based lines of an analyzed AST carrying at least one recognized
@@ -1912,7 +1912,7 @@ func _has_any_alias_tag(node: Dictionary) -> bool:
 	return false
 
 
-## Left-boundary rule for \@alias/@endalias scanning: start of value,
+## Left-boundary rule for \@alias/@end_alias scanning: start of value,
 ## or #/space/tab/newline before the @ (multi-line tokens included).
 func _at_alias_left(value: String, i: int) -> bool:
 	if i <= 0:
@@ -1936,9 +1936,9 @@ func _alias_line_of(value: String, pos: int) -> int:
 	return line
 
 
-## Finds "@endalias" at a tag boundary from pos: returns the @ position
+## Finds "@end_alias" at a tag boundary from pos: returns the @ position
 ## or -1. Stray text (including nested \@alias words) is skipped.
-func _find_endalias(value: String, from: int) -> int:
+func _find_end_alias(value: String, from: int) -> int:
 	var n := value.length()
 	var i := from
 	while i < n:
@@ -1948,7 +1948,7 @@ func _find_endalias(value: String, from: int) -> int:
 			while j < n and _is_tag_char(value.unicode_at(j)):
 				word += value.substr(j, 1)
 				j += 1
-			if word == "endalias":
+			if word == "end_alias":
 				return i
 		i += 1
 	return -1
@@ -1972,10 +1972,10 @@ static func _clean_alias_expr(raw: String) -> String:
 	return " ".join(parts)
 
 
-## Scans a whole comment value for "@alias NAME expr \@endalias"
-## blocks. The expression runs to \@endalias, so it may span lines and
+## Scans a whole comment value for "@alias NAME expr \@end_alias"
+## blocks. The expression runs to \@end_alias, so it may span lines and
 ## hold whitespace. Returns [{name, expr, line}] plus
-## [{error, line}] for unterminated blocks. Stray \@endalias words and
+## [{error, line}] for unterminated blocks. Stray \@end_alias words and
 ## text between blocks are ignored.
 func _extract_alias_blocks(value: String) -> Array:
 	var out: Array = []
@@ -1990,7 +1990,7 @@ func _extract_alias_blocks(value: String) -> Array:
 		while j < n and _is_tag_char(value.unicode_at(j)):
 			word += value.substr(j, 1)
 			j += 1
-		if word == "endalias":
+		if word == "end_alias":
 			i = j
 			continue
 		if word != "alias":
@@ -2001,7 +2001,7 @@ func _extract_alias_blocks(value: String) -> Array:
 		while k < n and _is_alias_ws(value.unicode_at(k)):
 			k += 1
 		if k <= j or k >= n:
-			out.append({"error": "@alias needs a name and a type expression: '# @alias Name int|float @endalias'", "line": tline})
+			out.append({"error": "@alias needs a name and a type expression: '# @alias Name int|float @end_alias'", "line": tline})
 			i = j
 			continue
 		var nword := ""
@@ -2016,17 +2016,17 @@ func _extract_alias_blocks(value: String) -> Array:
 		while k2 < n and _is_alias_ws(value.unicode_at(k2)):
 			k2 += 1
 		if k2 <= k or k2 >= n:
-			out.append({"error": "@alias '" + nword + "' needs a type expression before @endalias", "line": tline})
+			out.append({"error": "@alias '" + nword + "' needs a type expression before @end_alias", "line": tline})
 			i = k
 			continue
-		var epos := _find_endalias(value, k2)
+		var epos := _find_end_alias(value, k2)
 		if epos < 0:
-			out.append({"error": "@alias '" + nword + "' is missing @endalias", "line": tline})
+			out.append({"error": "@alias '" + nword + "' is missing @end_alias", "line": tline})
 			i = n
 			continue
 		var expr := _clean_alias_expr(value.substr(k2, epos - k2))
 		if expr == "":
-			out.append({"error": "@alias '" + nword + "' needs a type expression before @endalias", "line": tline})
+			out.append({"error": "@alias '" + nword + "' needs a type expression before @end_alias", "line": tline})
 			i = epos + 9
 			continue
 		out.append({"name": nword, "expr": expr, "line": tline})
@@ -3598,7 +3598,7 @@ static func _iface_words(value: String) -> Array:
 
 ## Pre-scan (before _scan): collects \@interface raw blocks from
 ## top-level standalone comments and top-level leadings. Each block is
-## {name, words, line}; missing \@endinterface errors here.
+## {name, words, line}; missing \@end_interface errors here.
 func _prescan_interfaces(ast: Dictionary) -> void:
 	for child in ast.get("children", []):
 		if not (child is Dictionary):
@@ -3613,7 +3613,7 @@ func _prescan_interfaces(ast: Dictionary) -> void:
 
 
 ## Collects \@interface blocks from one comment token. Several blocks
-## may share a token; stray \@endinterface words are ignored.
+## may share a token; stray \@end_interface words are ignored.
 func _collect_interface_tok(tok: Dictionary) -> void:
 	if str(tok.get("type", "")) != "TYPE_INFO":
 		return
@@ -3631,10 +3631,10 @@ func _collect_interface_tok(tok: Dictionary) -> void:
 			_error(ERR_INTERFACE_MALFORMED, "@interface has an invalid name '" + iname + "'", int(tok.get("line", 0)), 0, "")
 			return
 		var j := i + 2
-		while j < words.size() and str(words[j]) != "@endinterface":
+		while j < words.size() and str(words[j]) != "@end_interface":
 			j += 1
 		if j >= words.size():
-			_error(ERR_INTERFACE_MALFORMED, "@interface '" + iname + "' is missing @endinterface", int(tok.get("line", 0)), 0, "")
+			_error(ERR_INTERFACE_MALFORMED, "@interface '" + iname + "' is missing @end_interface", int(tok.get("line", 0)), 0, "")
 			return
 		var block := {"name": iname, "words": words.slice(i + 2, j), "line": int(tok.get("line", 0))}
 		if not _interfaces.has(iname):

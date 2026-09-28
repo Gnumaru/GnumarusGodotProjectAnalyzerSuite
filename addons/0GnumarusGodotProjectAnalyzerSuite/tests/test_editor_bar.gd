@@ -504,7 +504,7 @@ func _ann_tint(h) -> void:
 	_check(h, ce.get_line_background_color(3) == Color(0, 0, 0, 0), "clear drops second tint")
 	var syn = Impl.SynParser.new()
 	var ana = Impl.Analyzer.new()
-	var src := "# @nullable_policy trust\nextends Node\n# @template T\n# @generic_class T\nclass Box:\n\t# @param x T\n\tfunc setv(x):\n\t\tpass\nvar s = \"@param not real\"\n# @typo nope\n@export var e := 1\n# @interface I\n# func:ping:void\n# @endinterface\n"
+	var src := "# @nullable_policy trust\nextends Node\n# @template T\n# @generic_class T\nclass Box:\n\t# @param x T\n\tfunc setv(x):\n\t\tpass\nvar s = \"@param not real\"\n# @typo nope\n@export var e := 1\n# @interface I\n# func:ping:void\n# @end_interface\n"
 	_check(h, ana.annotation_lines(syn.parse_text(src)) == [1, 3, 4, 6, 12, 14], "annotation lines exact")
 	_check(h, ana.annotation_lines({}) == [], "annotation lines empty safe")
 	_check(h, ana.annotation_lines({"leading_comments": [{"value": "@var x", "line": 7}]}) == [7], "annotation lines minimal shape")

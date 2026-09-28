@@ -1,4 +1,4 @@
-# @interface DoThing func:thing:void @endinterface
+# @interface DoThing func:thing:void @end_interface
 
 class_name GnumarusGodotProjectAnalyzerSuiteAnnotationsShowcase1
 

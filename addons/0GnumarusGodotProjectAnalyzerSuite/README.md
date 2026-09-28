@@ -699,13 +699,13 @@ Available annotations at a glance (details in each subsection below):
 
 - `@generic_class` — declares a class generic over file templates.
 - `@template` — declares a file-local generic type variable.
-- `@interface` … `@endinterface` — declares an interface blueprint.
+- `@interface` … `@end_interface` — declares an interface blueprint.
 - `@implements` — claims conformance to interfaces or classes.
 - `@struct` — defines a fixed-shape struct type refining `Dictionary`.
 - `@tuple` — defines a fixed-shape tuple type refining `Array`.
 - `@private` — restricts a member to its nested family; outside uses error.
 - `@deprecated` — marks a script or member as deprecated; uses warn.
-- `@alias` … `@endalias` — names a reusable type expression.
+- `@alias` … `@end_alias` — names a reusable type expression.
 - `@return` — declares a function or lambda return type.
 - `@param` — declares a parameter type.
 - `@var` — declares or redefines a variable type, narrowing included.
@@ -1094,8 +1094,8 @@ func f():
 
 ### `@alias`
 
-Declares a named type alias: `# @alias Name <type-expr> @endalias`.
-The expression runs to `@endalias`, so it may span lines and hold
+Declares a named type alias: `# @alias Name <type-expr> @end_alias`.
+The expression runs to `@end_alias`, so it may span lines and hold
 whitespace (after the first whitespace run comes the name, after the
 second comes the expression). Any type expression the mini-parser
 accepts works, including other aliases:
@@ -1103,11 +1103,11 @@ accepts works, including other aliases:
 ```gdscript
 extends Node
 
-# @alias number int|float @endalias
-# @alias whole int @endalias
+# @alias number int|float @end_alias
+# @alias whole int @end_alias
 # @alias pairs
 # tuple[int, String]
-# @endalias
+# @end_alias
 
 # @var x whole
 var x := 1                 # OK: exact match
@@ -1294,7 +1294,7 @@ func other():
 ### `@interface`
 
 Declares an interface blueprint between `@interface Name` and a
-mandatory `@endinterface`, single or multi-line (members split on any
+mandatory `@end_interface`, single or multi-line (members split on any
 whitespace; internals use `:`, `,` and `;`). Members: `var:name[:types]`
 and `const:name[:types]` (bare means any), `func:name` (returns any, no
 params), `func:name:Return[:params]`, `signal:name[:params]`,
@@ -1310,7 +1310,7 @@ extends Node
 
 # @interface IDamageable
 # func:apply_damage:void:dmg:int|float
-# @endinterface
+# @end_interface
 # @var mynode Node|IDamageable
 var mynode: Node = get_node('some_path')
 mynode.apply_damage(1)   # OK: Node lacks it, IDamageable has it
@@ -1353,7 +1353,7 @@ extends Node2D
 
 # @interface Drawable
 # func:draw:void:canvas:CanvasItem
-# @endinterface
+# @end_interface
 # @implements Node2D Drawable
 func draw(canvas: CanvasItem) -> void:
     pass
@@ -1434,7 +1434,7 @@ func f():
 
 `null` works as a union arm in any type expression
 (`# @var x Node|null`,
-`# @alias MaybeNode Node|null @endalias`): it means the Nil type.
+`# @alias MaybeNode Node|null @end_alias`): it means the Nil type.
 Arm compatibility mirrors Godot assignability, verified against the
 language itself: `null` fits Object-derived types, `Variant` and
 untyped/dynamic slots, and nothing else (value types, arrays and

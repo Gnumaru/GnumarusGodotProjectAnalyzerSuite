@@ -53,8 +53,8 @@ var point_bad2: Dictionary = {"x": 1, "z": 2} # ERROR: has no field "z"
 var point_bad3: Dictionary = {"x": 1, "y": 3.14} # ERROR: field "y" should be int
 
 
-# @alias show_number int|float @endalias
-# @alias show_flag bool @endalias
+# @alias show_number int|float @end_alias
+# @alias show_flag bool @end_alias
 # @var flag_ok show_flag
 var flag_ok := true # OK: bool matches the alias
 
@@ -143,7 +143,7 @@ class ShowSibB:
 
 # @interface ShowDrawable
 # func:ping:void
-# @endinterface
+# @end_interface
 
 
 # @implements ShowDrawable
@@ -160,7 +160,7 @@ class ShowBadImpl:
 
 # @interface ShowBadIface
 # func:broken:Nope:x:int
-# @endinterface
+# @end_interface
 
 
 # @struct ShowBadPoint 1 x:Nope
@@ -170,10 +170,10 @@ class ShowBadImpl:
 
 
 # @alias show_broken int|float
-var filler := 0 # ERROR on the tag above: missing @endalias
+var filler := 0 # ERROR on the tag above: missing @end_alias
 
 
-# @alias ShowMaybeNode Node|null @endalias
+# @alias ShowMaybeNode Node|null @end_alias
 # @var nn_node Node notnull
 var nn_node: Node
 

@@ -55,7 +55,7 @@ func _n_clash(h) -> void:
 	h.check(_has_err(h.analyze_text("extends RefCounted\n# @var x null notnull\nvar x: Variant\n", "res://tests/tmp_nn_c2.gd"), "var_malformed", "contradicts"), "bare null clash errors")
 	h.check(_has_err(h.analyze_text("extends RefCounted\n# @param p Node|null notnull\nfunc f(p: Variant):\n\tpass\n", "res://tests/tmp_nn_c3.gd"), "param_malformed", "contradicts"), "param clash errors")
 	h.check(_has_err(h.analyze_text("extends RefCounted\n# @return Node|null notnull\nfunc f():\n\tpass\n", "res://tests/tmp_nn_c4.gd"), "return_malformed", "contradicts"), "return clash errors")
-	h.check(_has_err(h.analyze_text("extends RefCounted\n# @alias MaybeN Node|null @endalias\n# @var x MaybeN notnull\nvar x: Variant\n", "res://tests/tmp_nn_c5.gd"), "var_malformed", "contradicts"), "alias clash errors")
+	h.check(_has_err(h.analyze_text("extends RefCounted\n# @alias MaybeN Node|null @end_alias\n# @var x MaybeN notnull\nvar x: Variant\n", "res://tests/tmp_nn_c5.gd"), "var_malformed", "contradicts"), "alias clash errors")
 
 
 func _n_assign(h) -> void:
