@@ -627,8 +627,8 @@ Bottom-panel dock (next to Output, Debugger, …) with two tabs
 sharing one toolbar. The Issues tab lists every known issue: live
 per-file results from each analysis overlaid on the last
 full-scan report (`ScanResults.json` is loaded when the dock builds,
-so it starts populated). Two toggle groups filter the rows, like the
-Output panel buttons: severities (Errors / Warnings / Notes —
+so it starts populated). Three toggles filter the rows, like the
+Output panel buttons: Addons first on the far left (off by default: every severity of `res://addons/` issues hides while off), then severities (Errors / Warnings / Notes —
 nothing emits notes yet, the toggle is ready) and resource types
 (`gd` / `tscn` / `tres` / `godot` / `other`, derived from the issue
 path, so script issues and resource-integrity issues toggle
@@ -1813,7 +1813,7 @@ suites still print, so the marker alone could look green).
   per-node analysis with JSONs, tag extras, `resource_path` /
   `node_path` in JSONs), EditorScript dumb-proxy
   shape, Project > Tools wiring null-safety).
-  `test_dock.gd` (bottom-panel dock: severity/type filter logic,
+  `test_dock.gd` (bottom-panel dock: severity/type/addons filter logic,
   row format and status text, per-file overlay plus scan-report
   replacement, toggle wiring, row navigation, rescan/clear, editor
   openers headless-safe, dock lifecycle null-safety, Issues/Files

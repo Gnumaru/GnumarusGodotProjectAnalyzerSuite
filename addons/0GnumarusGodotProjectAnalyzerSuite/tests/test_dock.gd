@@ -41,6 +41,7 @@ func run() -> Dictionary:
 	_r_dirs_tree(h)
 	_r_column_collapse(h)
 	_r_hide(h)
+	_r_addons(h)
 	_r_flat_view(h)
 	_r_openers(h)
 	_r_impl(h)
@@ -639,6 +640,56 @@ func _r_hide(h) -> void:
 	h.check((d as Object).get("_hidden").is_empty(), "stale hidden keys pruned")
 	h.check(d.call("shown_count") == 1, "prune keeps live rows")
 	d.free()
+
+
+func _r_addons(h) -> void:
+	h.check(Dock.is_addons_path("res://addons/x.gd"), "addons dir matches")
+	h.check(Dock.is_addons_path("res://addons/nested/y.tscn"), "addons nested matches")
+	h.check(not Dock.is_addons_path("res://a.gd"), "project path misses")
+	h.check(not Dock.is_addons_path("res://addons2/x.gd"), "addons prefix without slash misses")
+	h.check(not Dock.is_addons_path(""), "empty misses")
+	var issues := [
+		_issue("error", "res://a.gd", 1),
+		_issue("warning", "res://addons/b.gd", 2),
+		_issue("note", "res://addons/c.tscn", 3),
+	]
+	var show := {"error": true, "warning": true, "note": true}
+	var types := {"gd": true, "tscn": true, "tres": true, "godot": true, "other": true}
+	h.check(Dock.filter_issues(issues, show, types).size() == 3, "filter default keeps addons")
+	h.check(Dock.filter_issues(issues, show, types, true).size() == 3, "filter explicit on keeps addons")
+	var screened := Dock.filter_issues(issues, show, types, false)
+	h.check(screened.size() == 1 and str((screened[0] as Dictionary).get("path", "")) == "res://a.gd", "filter off drops every addon severity")
+	var d := _new_dock()
+	d.call("set_file_results", "res://a.gd", [_issue("error", "res://a.gd", 1)])
+	h.check(not bool((d as Object).get("_show_addons")), "addons toggle defaults off")
+	var btn: Button = (d as Object).get("_addons_btn")
+	h.check(btn != null and btn.text == "Addons" and not btn.button_pressed, "addons button first and off")
+	var toolbar := btn.get_parent()
+	h.check((toolbar as Node).get_child(0) == btn, "addons button leftmost")
+	d.call("set_file_results", "res://addons/b.gd", [_issue("error", "res://addons/b.gd", 2), _issue("warning", "res://addons/b.gd", 3)])
+	h.check(d.call("shown_count") == 1, "dock hides addon issues by default")
+	btn.button_pressed = true
+	d.call("_on_addons_toggled")
+	h.check(bool((d as Object).get("_show_addons")), "toggle records on")
+	h.check(d.call("shown_count") == 3, "toggle on shows addon issues")
+	btn.button_pressed = false
+	d.call("_on_addons_toggled")
+	h.check(d.call("shown_count") == 1, "toggle off hides again")
+	d.call("_apply_filters", {"show_addons": true})
+	h.check(bool((d as Object).get("_show_addons")) and btn.button_pressed, "apply syncs addons button")
+	d.call("refresh")
+	h.check(d.call("shown_count") == 3, "apply on shows addon issues")
+	d.free()
+	h.check(bool(FullScan.default_filters().get("show_addons", true)) == false, "defaults keep addons off")
+	h.check(bool(Dock.sanitize_filters({}).get("show_addons", true)) == false, "sanitize defaults addons off")
+	h.check(bool(Dock.sanitize_filters({"show_addons": true}).get("show_addons", false)), "sanitize keeps stored on")
+	h.check(bool(Dock.sanitize_filters({"show_addons": "yes"}).get("show_addons", true)) == false, "sanitize drops non-bool")
+	DirAccess.remove_absolute(FullScan.results_path())
+	Dock.save_filters({"error": true, "warning": true, "note": true}, {"gd": true, "tscn": true, "tres": true, "godot": true, "other": true}, {}, {}, true)
+	h.check(bool((Dock.load_filters().get("show_addons", false))), "roundtrip keeps addons on")
+	Dock.save_filters({"error": true, "warning": true, "note": true}, {"gd": true, "tscn": true, "tres": true, "godot": true, "other": true}, {}, {}, false)
+	h.check(not bool((Dock.load_filters().get("show_addons", true))), "roundtrip keeps addons off")
+	DirAccess.remove_absolute(FullScan.results_path())
 
 
 func _r_flat_view(h) -> void:

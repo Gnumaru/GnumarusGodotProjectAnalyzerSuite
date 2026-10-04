@@ -112,12 +112,12 @@ static func empty_doc() -> Dictionary:
 	return {"version": 1, "generated_unix": 0.0, "stages": {}, "errors": [], "warnings": [], "summary": {"stages": [], "files": 0, "errors": 0, "warnings": 0}, "filters": default_filters(), "census": _norm_census_group({}, true)}
 
 
-## Default dock filter state (everything visible, addons counted,
-## both Files-tab panels sorted by path ascending). The dock owns the
-## same shape; this copy lets the report carry it without depending
-## on the dock script.
+## Default dock filter state (severities/types visible, Issues-tab
+## addon issues hidden, both Files-tab panels sorted by path
+## ascending). The dock owns the same shape; this copy lets the
+## report carry it without depending on the dock script.
 static func default_filters() -> Dictionary:
-	return {"show": {"error": true, "warning": true, "note": true}, "types": {"gd": true, "tscn": true, "tres": true, "godot": true, "other": true}, "files": default_panel_state(), "dirs": default_panel_state()}
+	return {"show": {"error": true, "warning": true, "note": true}, "types": {"gd": true, "tscn": true, "tres": true, "godot": true, "other": true}, "show_addons": false, "files": default_panel_state(), "dirs": default_panel_state()}
 
 
 ## Sort keys accepted on the files panel (one sortable column each).
@@ -339,14 +339,14 @@ static func _write_doc(doc: Dictionary) -> Dictionary:
 	return doc
 
 
-## Stores dock filter state ("show"/"types" toggle maps plus the
-## per-panel Files-tab states under "files"/"dirs") in the report
-## without touching any stage entry or aggregate. Returns the full
+## Stores dock filter state ("show"/"types" toggle maps, the
+## Issues-tab "show_addons" flag, plus the per-panel Files-tab states
+## under "files"/"dirs") in the report without touching any stage entry or aggregate. Returns the full
 ## doc. The dock calls this as its file-level persistence; the
 ## EditorSettings copy (when available) takes precedence on load.
-static func store_filters(show: Dictionary, types: Dictionary, files_state := {}, dirs_state := {}) -> Dictionary:
+static func store_filters(show: Dictionary, types: Dictionary, files_state := {}, dirs_state := {}, show_addons := false) -> Dictionary:
 	var doc := load_results()
-	doc["filters"] = {"show": show.duplicate(), "types": types.duplicate(), "files": normalize_panel_state(files_state), "dirs": normalize_panel_state(dirs_state)}
+	doc["filters"] = {"show": show.duplicate(), "types": types.duplicate(), "show_addons": bool(show_addons), "files": normalize_panel_state(files_state), "dirs": normalize_panel_state(dirs_state)}
 	doc["generated_unix"] = Time.get_unix_time_from_system()
 	return _write_doc(doc)
 

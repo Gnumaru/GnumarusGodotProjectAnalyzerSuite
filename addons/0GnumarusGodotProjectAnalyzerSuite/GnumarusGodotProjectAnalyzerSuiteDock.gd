@@ -21,12 +21,13 @@ extends VBoxContainer
 ## default, never truncated). Every issue row
 ## carries a hide button on its right (Tree cell button, so rows keep
 ## text height); hiding drops that single issue until "Unhide" (in
-## the toolbar) brings every hidden issue back. Two toggle groups filter the issue list (same idea as the Output
-## panel filter buttons): severities (Errors / Warnings / Notes —
-## nothing emits notes yet, the toggle is ready for them) and
-## resource types (gd / tscn / tres / godot / other, derived from the
-## issue path, so script issues and resource-integrity issues toggle
-## independently). Picking a row calls the injected `_goto` Callable
+## the toolbar) brings every hidden issue back. Three toggles filter the issue list (same idea as the Output
+## panel filter buttons): Addons first (off by default: every severity
+## of res://addons/ issues hides while off), then severities (Errors
+## / Warnings / Notes — nothing emits notes yet, the toggle is ready
+## for them) and resource types (gd / tscn / tres / godot / other,
+## derived from the issue path, so script issues and
+## resource-integrity issues toggle independently). Picking a row calls the injected `_goto` Callable
 ## with the issue dict (the plugin wires it to editor navigation);
 ## Rescan calls the injected `_rescan` Callable (the full scan). All
 ## filter/census logic is static and headless-testable; only live
@@ -89,6 +90,9 @@ var _shown: Array = []
 var _hidden := {}
 var _show := {"error": true, "warning": true, "note": true}
 var _types := {"gd": true, "tscn": true, "tres": true, "godot": true, "other": true}
+## Issues-tab addons toggle (default off): hides every issue whose
+## path lives under res://addons/ while off, shows them while on.
+var _show_addons := false
 var _census := {}
 ## Per-panel Files-tab state: {"files": {...}, "dirs": {...}}, each
 ## {"include_addons": bool, "sort": key, "descending": bool}. The
@@ -121,6 +125,7 @@ var _view_tabs: TabContainer = null
 var _panel_widgets := {}
 var _sev_btns := {}
 var _type_btns := {}
+var _addons_btn: Button = null
 var _built := false
 
 
@@ -164,9 +169,17 @@ static func format_row(issue: Dictionary) -> String:
 	return "[%s] %s:%d: [%s] %s" % [severity_mark(sev), str(issue.get("path", "?")), line, str(issue.get("kind", "?")), str(issue.get("message", ""))]
 
 
+## True when a path lives under res://addons/ (the Issues-tab
+## addons toggle screens these while off). Pure, unit-tested
+## headless.
+static func is_addons_path(path: String) -> bool:
+	return str(path).begins_with("res://addons/")
+
+
 ## Filtered copy of issues: a row survives only when its severity
-## toggle and its resource-type toggle are both on. Pure.
-static func filter_issues(issues: Array, show: Dictionary, types: Dictionary) -> Array:
+## toggle and its resource-type toggle are both on, and (unless
+## show_addons) its path is outside res://addons/. Pure.
+static func filter_issues(issues: Array, show: Dictionary, types: Dictionary, show_addons := true) -> Array:
 	var out: Array = []
 	for e in issues:
 		if not (e is Dictionary):
@@ -174,6 +187,8 @@ static func filter_issues(issues: Array, show: Dictionary, types: Dictionary) ->
 		if not bool(show.get(normalize_severity(e), false)):
 			continue
 		if not bool(types.get(resource_type(str((e as Dictionary).get("path", ""))), false)):
+			continue
+		if not bool(show_addons) and is_addons_path(str((e as Dictionary).get("path", ""))):
 			continue
 		out.append(e)
 	return out
@@ -635,10 +650,10 @@ static func load_filters() -> Dictionary:
 ## then the report file). Headless it still writes the file copy so
 ## the logic stays testable; callers gate on editor hint when they
 ## only want editor-UX persistence.
-static func save_filters(show: Dictionary, types: Dictionary, files_state := {}, dirs_state := {}) -> void:
-	var payload := {"show": show.duplicate(), "types": types.duplicate(), "files": FullScan.normalize_panel_state(files_state), "dirs": FullScan.normalize_panel_state(dirs_state)}
+static func save_filters(show: Dictionary, types: Dictionary, files_state := {}, dirs_state := {}, show_addons := false) -> void:
+	var payload := {"show": show.duplicate(), "types": types.duplicate(), "files": FullScan.normalize_panel_state(files_state), "dirs": FullScan.normalize_panel_state(dirs_state), "show_addons": bool(show_addons)}
 	_write_editor_filters(payload)
-	FullScan.store_filters(show, types, files_state, dirs_state)
+	FullScan.store_filters(show, types, files_state, dirs_state, show_addons)
 
 
 ## EditorSettings filter payload, or {} when unavailable (headless).
@@ -1341,6 +1356,11 @@ func _ensure_built() -> void:
 	var toolbar := HBoxContainer.new()
 	toolbar.name = "Toolbar"
 	add_child(toolbar)
+	_addons_btn = _make_toggle("Addons", "Show issues from res://addons/ scripts")
+	_addons_btn.button_pressed = false
+	_addons_btn.pressed.connect(_on_addons_toggled)
+	toolbar.add_child(_addons_btn)
+	toolbar.add_child(VSeparator.new())
 	for sev in SEVERITIES:
 		var b := _make_toggle(str(SEV_LABELS.get(sev, sev)), "Show " + str(SEV_LABELS.get(sev, sev)).to_lower())
 		b.button_pressed = true
@@ -1460,6 +1480,8 @@ static func sanitize_filters(raw: Variant) -> Dictionary:
 				(clean.get("types", {}) as Dictionary)[k] = bool((stored_types as Dictionary).get(k, true))
 	var stored_addons: Variant = (raw as Dictionary).get("include_addons", true)
 	clean["include_addons"] = stored_addons if stored_addons is bool else true
+	var stored_show_addons: Variant = (raw as Dictionary).get("show_addons", false)
+	clean["show_addons"] = stored_show_addons if stored_show_addons is bool else false
 	clean["sort"] = sanitize_sort_key((raw as Dictionary).get("sort", "path"))
 	var stored_desc: Variant = (raw as Dictionary).get("descending", false)
 	clean["descending"] = stored_desc if stored_desc is bool else false
@@ -1476,6 +1498,9 @@ func _apply_filters(stored: Dictionary) -> void:
 	var clean := sanitize_filters(stored)
 	_show = (clean.get("show", {}) as Dictionary).duplicate()
 	_types = (clean.get("types", {}) as Dictionary).duplicate()
+	_show_addons = bool(clean.get("show_addons", false))
+	if _addons_btn != null and is_instance_valid(_addons_btn):
+		_addons_btn.button_pressed = _show_addons
 	_panel = {
 		PANEL_FILES: (clean.get("files", {}) as Dictionary).duplicate(),
 		PANEL_DIRS: (clean.get("dirs", {}) as Dictionary).duplicate(),
@@ -1601,6 +1626,15 @@ func _on_sev_toggled(sev: String) -> void:
 	refresh()
 
 
+## Issues-tab addons toggle: shows res://addons/ issues while on,
+## hides every severity of them while off. Never fails.
+func _on_addons_toggled() -> void:
+	if _addons_btn != null and is_instance_valid(_addons_btn):
+		_show_addons = bool(_addons_btn.button_pressed)
+	_persist_filters()
+	refresh()
+
+
 func _on_type_toggled(t: String) -> void:
 	_types[t] = bool((_type_btns[t] as Button).button_pressed)
 	_persist_filters()
@@ -1630,7 +1664,7 @@ func _sync_panel_widgets() -> void:
 func _persist_filters() -> void:
 	if not Engine.is_editor_hint():
 		return
-	save_filters(_show, _types, _panel.get(PANEL_FILES, {}), _panel.get(PANEL_DIRS, {}))
+	save_filters(_show, _types, _panel.get(PANEL_FILES, {}), _panel.get(PANEL_DIRS, {}), _show_addons)
 
 
 func _on_rescan() -> void:
@@ -1685,7 +1719,7 @@ func refresh() -> void:
 	for p in _by_path.keys():
 		for e in (_by_path[p] as Array):
 			all.append(e)
-	_shown = apply_hidden(filter_issues(all, _show, _types), _hidden)
+	_shown = apply_hidden(filter_issues(all, _show, _types, _show_addons), _hidden)
 	var live := {}
 	for e in all:
 		if e is Dictionary:
