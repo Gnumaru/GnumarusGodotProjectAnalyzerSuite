@@ -896,16 +896,34 @@ static func _norm_census_group(census: Dictionary, with_parts: bool) -> Dictiona
 
 ## GDScript stage: analyzes every project .gd (or `targets` when
 ## given) with fresh analyzers and stores stage "gdscript".
-## `targets`/`root_os` exist for hermetic tests; real runs pass
+## `Analyzer.INDEX_ONLY_FILES` are indexed, not analyzed (missing or
+## stale user JSONs are (re)generated up front, then the files are
+## skipped: their issues never enter the report). `targets`/`root_os`
+## exist for hermetic tests; real runs pass
 ## nothing. `opts` pins the policy snapshot (worker dispatch);
 ## `cancel` (Callable() -> bool, worker-owned) aborts between files.
 ## Returns the full stored doc.
+func _index_only_first(files: Array, root: String, opts: Dictionary) -> void:
+	var udir := data_dir() + "/user"
+	for src in files:
+		var path := str(src)
+		if path == "" or not (path in Analyzer.INDEX_ONLY_FILES):
+			continue
+		if not FileAccess.file_exists(path):
+			continue
+		if not Analyzer.index_stale(path, udir):
+			continue
+		var ana = _fresh_analyzer(opts)
+		ana.analyze_index(SynParser.new().parse_text(FileAccess.get_file_as_string(path)), path)
+
+
 func run_gdscript(root_os := "", targets := [], opts := {}, cancel := Callable()) -> Dictionary:
 	var root := root_os if root_os != "" else project_root()
 	var files: Array = (targets as Array).duplicate() if not (targets as Array).is_empty() else Integrity.collect_gd_scripts(root)
 	files.sort()
 	Analyzer._roster_refresh(root)
 	Analyzer._roster_absorb(Analyzer._roster_scan_files(root))
+	_index_only_first(files, root, opts)
 	var errors: Array = []
 	var warnings: Array = []
 	var i := 0
@@ -918,6 +936,8 @@ func run_gdscript(root_os := "", targets := [], opts := {}, cancel := Callable()
 		print("Gnumarus Full Scan: gdscript [%d/%d] %s" % [i, files.size(), path])
 		if path == "" or not FileAccess.file_exists(path):
 			errors.append(_issue(STAGE_GDSCRIPT, "error", "unreadable", "Cannot open file: " + path, path))
+			continue
+		if path in Analyzer.INDEX_ONLY_FILES:
 			continue
 		var ana = _fresh_analyzer(opts)
 		var res: Dictionary = ana.analyze(SynParser.new().parse_text(FileAccess.get_file_as_string(path)), path)

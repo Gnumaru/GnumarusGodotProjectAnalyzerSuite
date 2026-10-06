@@ -38,6 +38,7 @@ func run() -> Dictionary:
 	_backup_results()
 	_r_mechanics(h)
 	_r_fullscan_plumbs(h)
+	_r_warm_index(h)
 	_r_impl_glue(h)
 	_restore_results()
 	return h.result()
@@ -130,6 +131,32 @@ func _r_fullscan_plumbs(h) -> void:
 	h.check(not (((cancelled as Dictionary).get("stages", {}) as Dictionary) as Dictionary).has(FullScan.STAGE_GDSCRIPT), "cancel stores no stage")
 	DirAccess.remove_absolute(TMP_GD)
 	_clean_user_jsons(before)
+
+
+## Warm index-only coverage: index files sort first, and warm_step
+## (re)generates a stale index JSON without reporting anything.
+func _r_warm_index(h) -> void:
+	var tok := "res://addons/0GnumarusGodotProjectAnalyzerSuite/GnumarusGodotProjectAnalyzerSuiteGdscriptTokenizer.gd"
+	var ordered: Array = Impl.warm_order(["res://z.gd", tok, "res://a.gd"])
+	h.check(str(ordered[0]) == tok, "warm index file first")
+	h.check(ordered.slice(1) == ["res://a.gd", "res://z.gd"], "warm rest keeps order")
+	var udir := FullScan.data_dir() + "/user"
+	var tok_json := udir + "/GnumarusGodotProjectAnalyzerSuiteGdscriptTokenizer.json"
+	var had := FileAccess.file_exists(tok_json)
+	var backup := FileAccess.get_file_as_string(tok_json) if had else ""
+	DirAccess.remove_absolute(tok_json)
+	Impl.Analyzer._roster_refresh(Impl.project_root())
+	Impl.Analyzer._roster_absorb(Impl.Analyzer._roster_scan_files(Impl.project_root()))
+	var impl = Impl.new(null)
+	h.check(impl.warm_step([tok], 0, 60000) == 1, "warm step drains index file")
+	h.check(FileAccess.file_exists(tok_json), "warm step writes the index json")
+	if had:
+		var f := FileAccess.open(tok_json, FileAccess.WRITE)
+		if f != null:
+			(f as FileAccess).store_string(backup)
+			(f as FileAccess).close()
+	elif FileAccess.file_exists(tok_json):
+		DirAccess.remove_absolute(tok_json)
 
 
 func _r_impl_glue(h) -> void:

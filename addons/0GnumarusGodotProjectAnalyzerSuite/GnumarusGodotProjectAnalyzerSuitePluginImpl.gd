@@ -275,6 +275,20 @@ static func order_for_warm(paths: Array) -> Array:
 	return ordered
 
 
+## Warm ordering with index-only files first: their JSONs must exist
+## before anything references them, or on-demand analysis pays full
+## price mid-pass. Static, pure.
+static func warm_order(all: Array) -> Array:
+	var idx: Array = []
+	var rest: Array = []
+	for p in all:
+		if str(p) in Analyzer.INDEX_ONLY_FILES:
+			idx.append(p)
+		else:
+			rest.append(p)
+	return idx + order_for_warm(rest)
+
+
 ## res:// dependency path behind a roster extends head (""): bare and
 ## dotted class names via the roster, quoted `"res://..."` heads
 ## directly. Static, pure.
@@ -341,7 +355,10 @@ func warm_step(paths: Array, from_idx: int, budget_ms: int, verbose := false, op
 				if verbose:
 					print("Gnumarus Analyzer: warming [%d/%d] %s" % [i + 1, paths.size(), src])
 				var ana = _fresh_analyzer(opts)
-				ana.analyze(SynParser.new().parse_text(FileAccess.get_file_as_string(src)), src)
+				if src in Analyzer.INDEX_ONLY_FILES:
+					ana.analyze_index(SynParser.new().parse_text(FileAccess.get_file_as_string(src)), src)
+				else:
+					ana.analyze(SynParser.new().parse_text(FileAccess.get_file_as_string(src)), src)
 		i += 1
 		done += 1
 		if done >= WARM_CHUNK or Time.get_ticks_msec() - t0 >= budget_ms:
@@ -391,7 +408,7 @@ func _warm_begin(g: int) -> void:
 		return
 	Analyzer._roster_refresh(project_root())
 	Analyzer._roster_absorb(Analyzer._roster_scan_files(project_root()))
-	_warm_pending = order_for_warm(collect_project_scripts(project_root()))
+	_warm_pending = warm_order(collect_project_scripts(project_root()))
 	_warm_idx = 0
 	if _warm_pending.is_empty():
 		return
@@ -426,7 +443,7 @@ func _dispatch_warm() -> void:
 func _warm_task(worker: Object, root_os: String, opts: Dictionary) -> void:
 	Analyzer._roster_refresh(root_os)
 	Analyzer._roster_absorb(Analyzer._roster_scan_files(root_os))
-	var paths := order_for_warm(collect_project_scripts(root_os))
+	var paths := warm_order(collect_project_scripts(root_os))
 	print("Gnumarus Analyzer: warming %d project scripts in the background..." % paths.size())
 	var idx := 0
 	while idx < paths.size():

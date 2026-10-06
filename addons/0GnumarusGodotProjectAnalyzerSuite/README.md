@@ -546,7 +546,13 @@ scripts-only runs stay separable) and `resource_integrity`
 (text resources plus `.gd` load literals, plus embedded GDScripts
 as a consequence of the resource scan) — and each stage persists
 `ScanResults.json` when it finishes, so the report stays complete
-even if a later stage is interrupted. Future stages only add a stage
+even if a later stage is interrupted. The gdscript stage indexes
+`Analyzer.INDEX_ONLY_FILES` (the five pipeline-owned parser/
+analyzer scripts) instead of analyzing them: missing or stale user
+JSONs are (re)generated up front via `analyze_index` (parse +
+member scan + resolves + user JSONs, no walk/flow/issues — the
+same JSON shape cross-file lookups read), then the files are
+skipped, so their issues never enter the report. Future stages only add a stage
 name plus one `store_stage()` call: the report merges generically
 (load on-disk doc, replace only that stage entry, recompute sorted
 aggregates and summary), so no existing code changes.
@@ -1815,7 +1821,8 @@ suites still print, so the marker alone could look green).
   cross references per analysis).
   `test_full_scan.gd` (aggregated full scan: `ScanResults.json`
   merge/sort/summary, corrupt-file fallback, hermetic gdscript +
-  integrity stages, embedded scripts (stem naming, opt-out setting,
+  integrity stages, index-only mode (skip list, stale detection,
+  index-vs-full JSON parity, cold-start generation), embedded scripts (stem naming, opt-out setting,
   per-node analysis with JSONs, tag extras, `resource_path` /
   `node_path` in JSONs), EditorScript dumb-proxy
   shape, Project > Tools wiring null-safety).
@@ -1828,6 +1835,7 @@ suites still print, so the marker alone could look green).
   sortable dir rows and per-table column collapse).
   `test_scan_worker.gd` (background scans: pool dispatch/done/
   cancel/wait mechanics, FullScan policy-snapshot and cancel plumbs,
+  warm index-first ordering and index regeneration,
   plugin dispatch null-safety headless).
 - `tests/AnnotationsStressTest.gd` is a non-suite fixture: a
   single-file stress of every annotation, valid and invalid uses
@@ -1911,7 +1919,7 @@ string literals never do).
   runs after our immediate paint and resets every line background,
   so without it highlights would vanish until the next manual run.
   On request, a background scan analyzes project files in
-  one WorkerThreadPool task (leaves first via the roster extends
+  one WorkerThreadPool task (index-only files first, then leaves first via the roster extends
   map, so parents land before children cascade, so cross-file data
   is ready before it is needed): no frame slicing, no main-thread
   work at all — the editor stays fully usable, progress still prints

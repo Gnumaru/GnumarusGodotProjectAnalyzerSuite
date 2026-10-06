@@ -248,6 +248,36 @@ const SynParser = preload("GnumarusGodotProjectAnalyzerSuiteGdscriptSyntaticPars
 ## otherwise a dotted inner path like "Outer" or "Outer.Inner".
 const DECL_TYPES := ["VAR_DECL", "CONST_DECL", "FUNC_DECL", "CLASS_DECL", "ENUM_DECL", "SIGNAL_DECL"]
 
+## Pipeline-owned scripts the full scan and warm pass index instead
+## of analyzing (parse + member scan + resolves + user JSONs, no
+## walk/flow/issues): they are too big to pay full price for, and
+## nothing outside them needs their issues. Fixed list; live analysis
+## of an open file still runs full. Their user JSONs are written by
+## analyze_index whenever missing or stale (cold start included), so
+## cross-file lookups keep resolving.
+const INDEX_ONLY_FILES := [
+	"res://addons/0GnumarusGodotProjectAnalyzerSuite/GnumarusGodotProjectAnalyzerSuiteGdscriptTokenizer.gd",
+	"res://addons/0GnumarusGodotProjectAnalyzerSuite/GnumarusGodotProjectAnalyzerSuiteGdscriptPostTokenizer.gd",
+	"res://addons/0GnumarusGodotProjectAnalyzerSuite/GnumarusGodotProjectAnalyzerSuiteGdscriptSyntaticParser.gd",
+	"res://addons/0GnumarusGodotProjectAnalyzerSuite/GnumarusGodotProjectAnalyzerSuiteGdscriptSemanticParser.gd",
+	"res://addons/0GnumarusGodotProjectAnalyzerSuite/GnumarusGodotProjectAnalyzerSuiteGdscriptAnalyzer.gd",
+]
+
+
+## True when an index-only source needs (re)indexing: its user JSON
+## is missing or older than the source (same naming rule as the
+## writers: roster class when known, else the path-derived base).
+## Static, cheap (two stats, no IO beyond that). Callers refresh the
+## roster first so renames resolve.
+static func index_stale(source_res_path: String, user_dir: String) -> bool:
+	var stem := _roster_class_for_path(source_res_path)
+	if stem == "":
+		stem = SemParser.user_file_base("", "", source_res_path)
+	var js := user_dir + "/" + stem + ".json"
+	if not FileAccess.file_exists(js):
+		return true
+	return FileAccess.get_modified_time(source_res_path) > FileAccess.get_modified_time(js)
+
 var _errors: Array = []
 var _warnings: Array = []
 var _members: Dictionary = {}
@@ -895,6 +925,90 @@ func analyze(ast: Dictionary, script_path: String = "", embedded: String = "", e
 	_check_implements()
 	_sort_issues(_errors)
 	_sort_issues(_warnings)
+	ast["analyzer_errors"] = _errors
+	ast["analyzer_warnings"] = _warnings
+	_update_user_files(ast)
+	ast["analyzer_written"] = _written
+	return {"ast": ast, "errors": _errors, "warnings": _warnings}
+
+
+## Index-only analysis for full-scan/warm skip lists: runs the
+## prologue, prescans, member scan and resolves, then writes the
+## user JSONs — everything cross-file consumers read — without the
+## walk/flow/pending-check passes or any issues. Returns empty
+## errors/warnings (these files report nothing in the scan).
+## Never fails.
+func analyze_index(ast: Dictionary, script_path: String = "") -> Dictionary:
+	_embedded_base = ""
+	_embedded_node = ""
+	_errors = []
+	_warnings = []
+	_members = {}
+	_private = {}
+	_class_extends = {}
+	_script_deprecated = {}
+	_written = []
+	_type_cache = {}
+	_tuples = {}
+	_structs = {}
+	_interfaces = {}
+	_implements = {}
+	_aliases = {}
+	_templates = {}
+	_extends_raw = {}
+	_extends_args = {}
+	_pending_tree_checks = []
+	_pending_alias_narrows = []
+	_pending_not_null_clash = []
+	_pending_vartype_bounds = []
+	_file_policy = ""
+	_file_strict = ""
+	_roster_swept = false
+	_last_refs = []
+	if _policy_explicit:
+		_policy_base = null_policy
+	else:
+		_policy_base = _read_project_policy()
+	if _strict_explicit:
+		_strict_base = strict_untyped
+	else:
+		_strict_base = _read_project_strict()
+	_script_class = ""
+	_script_extends = ""
+	for child in ast.get("children", []):
+		if child is Dictionary and str((child as Dictionary).get("type", "")) == "CLASS_NAME":
+			_script_class = str((child as Dictionary).get("name", ""))
+		elif child is Dictionary and str((child as Dictionary).get("type", "")) == "EXTENDS":
+			_script_extends = _dotted_path((child as Dictionary).get("path", []))
+	var anchor = _analyzer_anchor_dir()
+	_project_root = SemParser.find_project_root(anchor)
+	if _project_root == "":
+		_project_root = SemParser.fallback_root(anchor + "/GnumarusGodotProjectAnalyzerSuiteGodotTypesInfoDumper.gd")
+	_script_resource_path = SemParser.resource_path_for(script_path, _project_root)
+	_write_base = _compute_write_base(_project_root)
+	_roster_refresh(_project_root)
+	if not _ensure_native_types():
+		_errors = []
+		_warnings = []
+		ast["analyzer_errors"] = _errors
+		ast["analyzer_warnings"] = _warnings
+		ast["analyzer_written"] = _written
+		return {"ast": ast, "errors": _errors, "warnings": _warnings}
+	_scan_header(ast)
+	_scan_policy_misplaced(ast.get("children", []))
+	_prescan_tuples(ast)
+	_prescan_structs(ast)
+	_prescan_interfaces(ast)
+	_prescan_aliases(ast)
+	_prescan_templates(ast)
+	_scan_children(ast.get("children", []), "")
+	_resolve_tuples()
+	_resolve_structs()
+	_resolve_interfaces()
+	_resolve_aliases()
+	_resolve_templates()
+	_errors = []
+	_warnings = []
 	ast["analyzer_errors"] = _errors
 	ast["analyzer_warnings"] = _warnings
 	_update_user_files(ast)

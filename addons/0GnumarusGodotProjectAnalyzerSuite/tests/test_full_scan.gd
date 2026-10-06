@@ -118,6 +118,7 @@ func run() -> Dictionary:
 	_r_embedded(h)
 	_r_corrupt(h)
 	_r_gdscript_stage(h)
+	_r_index_only(h)
 	_r_integrity_stage(h)
 	_r_proxy(h)
 	_r_menu(h)
@@ -532,6 +533,75 @@ func _r_gdscript_stage(h) -> void:
 	h.check(str(tmp_json.get("node_path", "")) == "", "file json stores empty node path")
 	DirAccess.remove_absolute(TMP_GD)
 	_clean_user_jsons(before)
+
+
+## Index-only mode: the skip list, stale detection, index-vs-full
+## JSON parity on a fixture, and a cold-start run_gdscript on a real
+## pipeline file (its JSON is backed up and restored).
+func _r_index_only(h) -> void:
+	var Analyzer = Impl.Analyzer
+	var listed: Array = Analyzer.INDEX_ONLY_FILES
+	h.check(listed.size() == 5, "index list has five")
+	var tok := "res://addons/0GnumarusGodotProjectAnalyzerSuite/GnumarusGodotProjectAnalyzerSuiteGdscriptTokenizer.gd"
+	h.check(listed.has(tok), "index list has tokenizer")
+	h.check(not listed.has("res://a.gd"), "index list skips normal files")
+	for f in listed:
+		h.check(FileAccess.file_exists(str(f)), "index target exists")
+	var udir := Impl.data_dir() + "/user"
+	h.check(Analyzer.index_stale("res://tests/tmp_idx_missing_xyz.gd", udir), "missing json reads stale")
+	var before := _user_files()
+	var src := "extends RefCounted\n# @tuple PTup 2 int String\n# @var v PTup\nvar v: Array = [1, \"s\"]\n# @var w NopeIdx\nvar w: Variant\n# @deprecated Use new.\nfunc old_fn() -> void:\n\tpass\nclass InnerIdx:\n\tvar iv := 1\n"
+	var path := "res://tests/tmp_idx_parity.gd"
+	var r1: Dictionary = Analyzer.new().analyze(SynParser.new().parse_text(src), path)
+	h.check(not (r1.get("errors", []) as Array).is_empty(), "parity fixture errors under full")
+	var full_jsons := _read_new_jsons(before)
+	_clean_user_jsons(before)
+	var r2: Dictionary = Analyzer.new().analyze_index(SynParser.new().parse_text(src), path)
+	h.check((r2.get("errors", []) as Array).is_empty() and (r2.get("warnings", []) as Array).is_empty(), "index returns no issues")
+	var idx_jsons := _read_new_jsons(before)
+	_clean_user_jsons(before)
+	h.check(full_jsons.keys() == idx_jsons.keys(), "index writes the same files")
+	var same := full_jsons.keys() == idx_jsons.keys()
+	for k in full_jsons.keys():
+		if not idx_jsons.has(k) or _norm_user_json(full_jsons[k]) != _norm_user_json(idx_jsons[k]):
+			same = false
+	h.check(same, "index jsons match full minus issues")
+	var tok_json := udir + "/GnumarusGodotProjectAnalyzerSuiteGdscriptTokenizer.json"
+	var had := FileAccess.file_exists(tok_json)
+	var backup := FileAccess.get_file_as_string(tok_json) if had else ""
+	DirAccess.remove_absolute(tok_json)
+	var doc: Dictionary = Impl.new().run_gdscript("", [tok])
+	var entry: Dictionary = ((doc.get("stages", {}) as Dictionary).get(Impl.STAGE_GDSCRIPT, {}))
+	h.check(((entry.get("errors", []) as Array) as Array).is_empty(), "index target reports no errors")
+	h.check(((entry.get("warnings", []) as Array) as Array).is_empty(), "index target reports no warnings")
+	h.check(FileAccess.file_exists(tok_json), "cold start generates the json")
+	h.check(not Analyzer.index_stale(tok, udir), "fresh json reads fresh")
+	if had:
+		var f := FileAccess.open(tok_json, FileAccess.WRITE)
+		if f != null:
+			(f as FileAccess).store_string(backup)
+			(f as FileAccess).close()
+	elif FileAccess.file_exists(tok_json):
+		DirAccess.remove_absolute(tok_json)
+	_clean_user_jsons(before)
+
+
+## User JSONs created since `before`, by file name. Pure IO read.
+func _read_new_jsons(before: Array) -> Dictionary:
+	var out := {}
+	for f in _user_files():
+		if not before.has(f):
+			out[str(f)] = _read_user_json(str(f))
+	return out
+
+
+## User JSON minus the volatile issue stamps (index mode reports
+## none by design). Pure.
+static func _norm_user_json(d: Dictionary) -> Dictionary:
+	var out := (d as Dictionary).duplicate(true)
+	out.erase("analysis_errors")
+	out.erase("analysis_warnings")
+	return out
 
 
 func _r_integrity_stage(h) -> void:
