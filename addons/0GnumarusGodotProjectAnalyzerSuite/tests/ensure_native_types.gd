@@ -8,7 +8,8 @@ extends SceneTree
 ## produced exclusively by GnumarusGodotProjectAnalyzerSuiteGodotTypesInfoDumper, so a
 ## deleted data dir never grows them back on its own. This script
 ## closes that gap: if the three markers exist and are non-empty it
-## exits immediately; otherwise it runs the dumper with the same Godot
+## exits immediately (backfilling per-enum JSONs first when the index
+## predates them); otherwise it runs the dumper with the same Godot
 ## binary used for the tests (env GODOT_BIN, fallback "godot").
 ## Env FORCE_NATIVE_DUMP=1 regenerates even when everything is present.
 ##
@@ -34,6 +35,10 @@ func _run() -> void:
 	if not forced and d.is_present():
 		var counts: Array = _count_types()
 		print("NATIVE TYPES READY (cached: ", int(counts[0]), " builtin, ", int(counts[1]), " classes)")
+		quit(0)
+		return
+	if not forced and d.backfill_enums() and d.is_present():
+		print("NATIVE TYPES READY (backfilled enum files)")
 		quit(0)
 		return
 	var summary: Dictionary = await d.dump_all_async(Dumper.default_executable(), self)

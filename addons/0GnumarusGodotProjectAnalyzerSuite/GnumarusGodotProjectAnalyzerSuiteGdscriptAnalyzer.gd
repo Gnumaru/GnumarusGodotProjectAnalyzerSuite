@@ -168,6 +168,7 @@ const ERR_IMPLEMENTS_MISPLACED := "implements_misplaced"
 const ERR_IMPLEMENTS_MALFORMED := "implements_malformed"
 const ERR_IMPLEMENTS_UNKNOWN_TYPE := "implements_unknown_type"
 const ERR_IMPLEMENTS_MISMATCH := "implements_mismatch"
+const ERR_ENUM_MISMATCH := "enum_mismatch"
 const ERR_MISSING_METHOD := "missing_method"
 const ERR_MISSING_MEMBER := "missing_member"
 const ERR_ASSIGN_MISMATCH := "assign_mismatch"
@@ -913,7 +914,9 @@ func analyze(ast: Dictionary, script_path: String = "", embedded: String = "", e
 	_resolve_interfaces()
 	_resolve_aliases()
 	_resolve_templates()
+	_write_enum_files(ast)
 	_check_pending_extends()
+	_check_enum_bases(ast)
 	_check_pending_vartype_bounds()
 	_check_pending_trees()
 	_check_pending_alias_narrows()
@@ -1007,6 +1010,7 @@ func analyze_index(ast: Dictionary, script_path: String = "") -> Dictionary:
 	_resolve_interfaces()
 	_resolve_aliases()
 	_resolve_templates()
+	_write_enum_files(ast)
 	_errors = []
 	_warnings = []
 	ast["analyzer_errors"] = _errors
@@ -1948,6 +1952,7 @@ func _check_nominal_values(d: Dictionary, value: Variant, line: int, owner: Stri
 		seen[vt] = true
 		_check_tuple_value(vt, value, line, owner, true)
 		_check_struct_value(vt, value, line, owner, true)
+		_check_enum_value(vt, value, line, owner)
 	var ann: Dictionary = d.get("var_ann", {})
 	for m in (ann.get("types", []) as Array):
 		var ms := str(m)
@@ -1956,6 +1961,25 @@ func _check_nominal_values(d: Dictionary, value: Variant, line: int, owner: Stri
 		seen[ms] = true
 		_check_tuple_value(ms, value, line, owner, true)
 		_check_struct_value(ms, value, line, owner, true)
+		_check_enum_value(ms, value, line, owner)
+
+
+## Value check against one enum-typed slot: int literals pass;
+## provably non-int literals error (enums store ints, like the
+## directional tuple literal rule); null, chains (including enum
+## values), variables and calls stay silent. Unknown names stay
+## silent. Never fails.
+func _check_enum_value(tname: String, value: Variant, line: int, owner: String) -> void:
+	if not _is_enum_name(tname):
+		return
+	var toks := _trim_trivia(_as_tokens(value))
+	if toks.is_empty():
+		return
+	if toks.size() == 1 and (toks[0] is Dictionary):
+		var et := _infer_lit_token(toks[0])
+		if et == "" or et == "int":
+			return
+		_error(ERR_ENUM_MISMATCH, "cannot assign '" + et + "' to enum '" + tname + "' (expected an int or a '" + tname + "' member)", line, 0, owner)
 
 
 ## Element-wise check of a literal element list against a definition.
@@ -2005,6 +2029,127 @@ func _write_tuple_file(tname: String) -> void:
 	}
 	_write_json(_write_base + "/user/" + tname + ".json", info)
 	_written.append(_write_base + "/user/" + tname + ".json")
+
+
+## Writes one <Base>.<Enum>.json per enum declaration (kind
+## "enum", fixed int values): the nested-class dotted-file pattern,
+## so cross-file enum types resolve through the file lookup.
+## Called after the resolve block (member tables complete); safe in
+## index mode too. Values compute by auto-increment/explicit int
+## (dec/hex/bin/oct, underscores, unary minus); anything else stores
+## a null value (unknown, skipped downstream like any dynamic).
+func _write_enum_files(ast: Dictionary) -> void:
+	var base_name = SemParser.user_file_base(_script_class, _script_resource_path, "")
+	if _embedded_base != "":
+		base_name = _embedded_base
+		if _script_class != "":
+			base_name += "_" + _script_class
+	if _members.has(""):
+		for mname in (_members[""] as Dictionary).keys():
+			var rec: Dictionary = (_members[""] as Dictionary)[mname]
+			if str(rec.get("kind", "")) == "enum":
+				_write_enum_file(str(base_name) + "." + str(mname), rec)
+	for item in _inner_full_names(ast, str(base_name), ""):
+		if not (item is Dictionary):
+			continue
+		var table: Dictionary = _members.get(str((item as Dictionary).get("owner", "")), {})
+		for mname in table.keys():
+			var rec: Dictionary = table[mname]
+			if str(rec.get("kind", "")) == "enum":
+				_write_enum_file(str((item as Dictionary).get("file", "")) + "." + str(mname), rec)
+
+
+## Writes one enum JSON from a member-table enum rec (node holds the
+## ENUM_DECL with ENUM_MEMBER children). Never fails.
+func _write_enum_file(dotted: String, rec: Dictionary) -> void:
+	var values: Array = []
+	var next := 0
+	var node: Variant = rec.get("node", {})
+	if node is Dictionary:
+		for m in (node as Dictionary).get("members", []):
+			if not (m is Dictionary) or str((m as Dictionary).get("type", "")) != "ENUM_MEMBER":
+				continue
+			var got := _enum_const_int((m as Dictionary).get("value", null))
+			var val: Variant = null
+			if bool(got.get("ok", false)):
+				val = int(got.get("value", 0))
+				next = int(val) + 1
+			elif _enum_auto_next((m as Dictionary).get("value", null)):
+				val = next
+				next += 1
+			values.append({"name": str((m as Dictionary).get("name", "")), "value": val})
+	var info := {"name": dotted, "kind": "enum", "values": values, "is_bitfield": false, "resource_path": _script_resource_path, "node_path": _embedded_node}
+	_write_json(_write_base + "/user/" + dotted + ".json", info)
+	_written.append(_write_base + "/user/" + dotted + ".json")
+
+
+## Integer value of an enum member initializer (single INT token,
+## decimal/hex/binary/octal with underscores, optional unary minus).
+## {"ok", "value"} or {"ok": false}. Pure.
+static func _enum_const_int(value: Variant) -> Dictionary:
+	var toks: Array = []
+	if value is Dictionary:
+		for t in ((value as Dictionary).get("tokens", []) as Array):
+			if t is Dictionary:
+				toks.append(t)
+	if toks.size() == 1 and str(toks[0].get("type", "")) == "INT":
+		return _parse_int_literal(str(toks[0].get("value", "")))
+	if toks.size() == 2 and str(toks[0].get("type", "")) == "OPERATOR" and str(toks[0].get("value", "")) == "-" and str(toks[1].get("type", "")) == "INT":
+		var inner := _parse_int_literal(str(toks[1].get("value", "")))
+		if bool(inner.get("ok", false)):
+			return {"ok": true, "value": -int(inner.get("value", 0))}
+	return {"ok": false}
+
+
+## True when an enum member takes the auto-increment value (no
+## initializer). Pure.
+static func _enum_auto_next(value: Variant) -> bool:
+	return value == null
+
+
+## Parses an integer literal (sign, 0x/0b/0o prefixes, underscores).
+## {"ok", "value"} or {"ok": false}. Pure.
+static func _parse_int_literal(text: String) -> Dictionary:
+	var s := str(text).strip_edges().replace("_", "")
+	if s == "":
+		return {"ok": false}
+	var neg := false
+	if s.begins_with("-"):
+		neg = true
+		s = s.substr(1)
+	elif s.begins_with("+"):
+		s = s.substr(1)
+	var base := 10
+	var digits := s
+	if s.begins_with("0x") or s.begins_with("0X"):
+		base = 16
+		digits = s.substr(2)
+	elif s.begins_with("0b") or s.begins_with("0B"):
+		base = 2
+		digits = s.substr(2)
+	elif s.begins_with("0o") or s.begins_with("0O"):
+		base = 8
+		digits = s.substr(2)
+	if digits == "":
+		return {"ok": false}
+	var val := 0
+	for i in range(digits.length()):
+		var d := _digit_val(digits.unicode_at(i))
+		if d < 0 or d >= base:
+			return {"ok": false}
+		val = val * base + d
+	return {"ok": true, "value": -val if neg else val}
+
+
+## Numeric value of one digit character (-1 when not a digit). Pure.
+static func _digit_val(c: int) -> int:
+	if c >= 48 and c <= 57:
+		return c - 48
+	if c >= 97 and c <= 102:
+		return c - 97 + 10
+	if c >= 65 and c <= 70:
+		return c - 65 + 10
+	return -1
 
 
 # ------------------------------------------------------- \@alias helpers
@@ -3158,6 +3303,54 @@ static func _split_top_commas(text: String) -> Array:
 	return out
 
 
+## Post-resolve pass: enums can never be base classes, neither at
+## script level (`extends E`) nor on inner classes (`class C
+## extends E`, inline or block form). Order-free (member tables and
+## enum JSONs are complete). Anything else stays exactly as silent
+## as today. Never fails.
+func _check_enum_bases(ast: Dictionary) -> void:
+	for child in ast.get("children", []):
+		if not (child is Dictionary):
+			continue
+		var t := str((child as Dictionary).get("type", ""))
+		if t == "EXTENDS":
+			_check_enum_base(_dotted_path((child as Dictionary).get("path", [])), int((child as Dictionary).get("line", 0)), "")
+		elif t == "CLASS_DECL":
+			_check_enum_bases_class(child as Dictionary, "")
+
+
+## Recursive half of _check_enum_bases over nested class bodies.
+## Never fails.
+func _check_enum_bases_class(node: Dictionary, owner: String) -> void:
+	_check_enum_base(_extends_head_text(_extends_tokens_of(node)), int(node.get("line", 0)), owner)
+	var body: Variant = node.get("body", null)
+	if body is Dictionary:
+		for child in (body as Dictionary).get("children", []):
+			if child is Dictionary and str((child as Dictionary).get("type", "")) == "CLASS_DECL":
+				_check_enum_bases_class(child as Dictionary, _full_name(owner, str(node.get("name", ""))))
+
+
+## One extends head against the enum rule. Never fails.
+func _check_enum_base(head: String, line: int, owner: String) -> void:
+	if head != "" and _is_enum_name(head):
+		_error(ERR_ENUM_MISMATCH, "cannot use enum '" + head + "' as a base class", line, 0, owner)
+
+
+## Head type name of extends tokens (identifiers and dots before any
+## bracket), "" when absent. Pure.
+static func _extends_head_text(toks: Array) -> String:
+	var head := ""
+	for t in toks:
+		if not (t is Dictionary):
+			continue
+		var ty := str((t as Dictionary).get("type", ""))
+		if ty == "LBRACKET" or ty == "LPAREN":
+			break
+		if ty == "IDENTIFIER" or ty == "BUILTIN_TYPE":
+			head += str((t as Dictionary).get("value", ""))
+		elif ty == "DOT":
+			head += "."
+	return head.strip_edges().trim_prefix(".").trim_suffix(".")
 ## Post-resolve pass: validates parameterized extends (arity against
 ## \@generic_class classes, template bounds on arguments). Anything else
 ## (plain bases, engine heads, unknown heads, unbalanced brackets)
@@ -5840,6 +6033,31 @@ func _is_interface_name(nm: String) -> bool:
 	return not info.is_empty() and str(info.get("kind", "")) == "interface"
 
 
+## True for an enum name (same-file member tables, same-file dotted
+## owners, or same-kind JSON on disk — user or native). Bare
+## cross-file names stay unknown, like nested classes: use the
+## dotted form across files.
+func _is_enum_name(nm: String) -> bool:
+	if nm == "":
+		return false
+	for key in _members.keys():
+		var table: Dictionary = _members[key]
+		if table.has(nm) and str((table[nm] as Dictionary).get("kind", "")) == "enum":
+			return true
+	if "." in nm:
+		var parts := nm.split(".")
+		var tail := str(parts[parts.size() - 1])
+		if tail != "":
+			var scope := ".".join(parts.slice(0, parts.size() - 1))
+			var owner_key := _resolve_private_owner(scope, "")
+			if _members.has(owner_key):
+				var stable: Dictionary = _members[owner_key]
+				if stable.has(tail) and str((stable[tail] as Dictionary).get("kind", "")) == "enum":
+					return true
+	var info := _type_info(nm)
+	return not info.is_empty() and str(info.get("kind", "")) == "enum"
+
+
 ## True when a name is virtual (tuple/struct/alias/interface):
 ## annotation-only types that can never appear as a declared GDScript
 ## type (vartypes, `->` arrows, base classes).
@@ -5888,6 +6106,10 @@ func _nominal_compat(member: String, ref: String) -> bool:
 	if member == "null":
 		return _null_fits(ref)
 	if member == ref or _derives_from(member, ref):
+		return true
+	if _is_enum_name(member) and ref == "int":
+		return true
+	if member == "int" and _is_enum_name(ref):
 		return true
 	if _opaque_script(member) or _opaque_script(ref):
 		return true
@@ -6471,6 +6693,7 @@ func _check_return_literal(ann: Dictionary, value: Variant, line: int, owner: St
 		seen[ms] = true
 		_check_tuple_value(ms, value, line, owner)
 		_check_struct_value(ms, value, line, owner)
+		_check_enum_value(ms, value, line, owner)
 
 
 # ------------------------------------------------------- collect passes
@@ -9845,6 +10068,80 @@ func _check_cross_static(base: String, tokens: Array, j: int, scope: Dictionary,
 	_check_cross_not_null_maybe(base, tokens, j, scope, fn, env, overlay, owner)
 
 
+## Enum behind a chain base name (same-file member tables, then
+## same-kind JSON on disk): {dname, vals} or {}. Locals, params and
+## member vars shadow it (the normal path owns those). Never fails.
+func _enum_base_def(base: String, scope: Dictionary, owner: String, env: Dictionary) -> Dictionary:
+	if base == "" or base == "_" or base == "self" or base == "super":
+		return {}
+	if (env as Dictionary).has(base):
+		return {}
+	if str(_scope_kind(scope, base)) != "":
+		return {}
+	if not _member_var_node(owner, base).is_empty() or not _member_var_node("", base).is_empty():
+		return {}
+	for o in [owner, ""]:
+		if _members.has(str(o)):
+			var table: Dictionary = _members[str(o)]
+			if table.has(base) and str((table[base] as Dictionary).get("kind", "")) == "enum":
+				return {"dname": base, "vals": _enum_member_names((table[base] as Dictionary).get("node", {}))}
+	var info := _type_info(base)
+	if not info.is_empty() and str(info.get("kind", "")) == "enum":
+		var vals: Array = []
+		for v in info.get("values", []):
+			if v is Dictionary:
+				vals.append(str((v as Dictionary).get("name", "")))
+		return {"dname": str(info.get("name", base)), "vals": vals}
+	return {}
+
+
+## Member names of an ENUM_DECL node ([] when absent). Pure.
+static func _enum_member_names(node: Variant) -> Array:
+	var out: Array = []
+	if node is Dictionary:
+		for m in (node as Dictionary).get("members", []):
+			if m is Dictionary and str((m as Dictionary).get("type", "")) == "ENUM_MEMBER":
+				out.append(str((m as Dictionary).get("name", "")))
+	return out
+
+
+## Verifies a DOT chain whose base is an enum (see _enum_base_def):
+## members read as ints, `.new()` errors, unknown members error like
+## native enums. Returns the index past the chain, -1 when the base
+## is not an enum (caller falls through). Never fails.
+func _verify_enum_base(tokens: Array, i: int, base: String, scope: Dictionary, owner: String, fn: Variant, env: Dictionary, overlay: Dictionary) -> int:
+	var def := _enum_base_def(base, scope, owner, env)
+	if def.is_empty():
+		return -1
+	if i + 1 >= tokens.size() or not (tokens[i + 1] is Dictionary) or str((tokens[i + 1] as Dictionary).get("type", "")) != "DOT":
+		return -1
+	var vals: Array = def.get("vals", [])
+	var dname := str(def.get("dname", base))
+	var j := i + 1
+	while j < tokens.size() and (tokens[j] is Dictionary) and str((tokens[j] as Dictionary).get("type", "")) == "DOT":
+		j += 1
+		if j >= tokens.size() or not (tokens[j] is Dictionary):
+			break
+		var nt := str((tokens[j] as Dictionary).get("type", ""))
+		if nt != "IDENTIFIER" and nt != "BUILTIN_TYPE" and nt != "KEYWORD":
+			break
+		var seg := str((tokens[j] as Dictionary).get("value", ""))
+		var is_call := j + 1 < tokens.size() and (tokens[j + 1] is Dictionary) and str((tokens[j + 1] as Dictionary).get("type", "")) == "LPAREN"
+		if seg == "new" and is_call:
+			_error(ERR_ENUM_MISMATCH, "cannot instantiate enum '" + dname + "'", int((tokens[j] as Dictionary).get("line", 0)), int((tokens[j] as Dictionary).get("column", 0)), owner)
+			j = _verify_span(tokens, j + 1, scope, owner, fn, env, overlay) + 1
+			return _skip_chain_verify(tokens, j, scope, owner, fn, env, overlay)
+		if seg in vals:
+			if is_call:
+				j = _verify_span(tokens, j + 1, scope, owner, fn, env, overlay) + 1
+			else:
+				j += 1
+			return _skip_chain_verify(tokens, j, scope, owner, fn, env, overlay)
+		_error(ERR_MISSING_MEMBER, "type '" + dname + "' has no member '" + seg + "'", int((tokens[j] as Dictionary).get("line", 0)), int((tokens[j] as Dictionary).get("column", 0)), owner)
+		return _skip_chain_verify(tokens, j, scope, owner, fn, env, overlay)
+	return j
+
+
 ## Verifies one DOT chain starting at tokens[i] (an IDENTIFIER).
 ## Links unify engine names and script owner keys: each segment is
 ## checked against script tables (own, extends walk, terminal engine
@@ -9860,6 +10157,9 @@ func _verify_chain(tokens: Array, i: int, scope: Dictionary, owner: String, fn: 
 	var j := i + 1
 	var kind := str(fb.get("kind", ""))
 	if kind == "skip":
+		var ej := _verify_enum_base(tokens, i, base, scope, owner, fn, env, overlay)
+		if ej >= 0:
+			return ej
 		_check_cross_static(base, tokens, j, scope, fn, env, overlay, owner)
 		_check_not_null_super(base, tokens, j, scope, fn, env, overlay, owner)
 		_check_super_cross(base, tokens, j, scope, fn, env, overlay, owner)
@@ -9943,6 +10243,10 @@ func _verify_chain(tokens: Array, i: int, scope: Dictionary, owner: String, fn: 
 			break
 		var seg := str((tokens[j] as Dictionary).get("value", ""))
 		if seg == "new":
+			var seg_is_call := j + 1 < tokens.size() and (tokens[j + 1] is Dictionary) and str((tokens[j + 1] as Dictionary).get("type", "")) == "LPAREN"
+			if seg_is_call and links.size() == 1 and str(links[0].get("kind", "")) == "enumvals":
+				_error(ERR_ENUM_MISMATCH, "cannot instantiate enum '" + str(links[0].get("dname", "?")) + "'", int((tokens[j] as Dictionary).get("line", 0)), int((tokens[j] as Dictionary).get("column", 0)), owner)
+				return _skip_chain_verify(tokens, j - 1, scope, owner, fn, env, overlay)
 			if links.size() == 1 and static_ctx and (str(links[0].get("kind", "")) == "script" or str(links[0].get("kind", "")) == "engine"):
 				static_ctx = false
 				signal_mode = false
@@ -11648,6 +11952,7 @@ func _check_assign_nominal(target: Dictionary, rhs: Array, line: int, owner: Str
 		seen[ms] = true
 		_check_tuple_reassign(ms, rhs, line, owner)
 		_check_struct_reassign(ms, rhs, line, owner)
+		_check_enum_value(ms, {"tokens": rhs}, line, owner)
 
 
 ## Reassignment value against one struct-typed slot: literals run the

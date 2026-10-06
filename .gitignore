@@ -5,3 +5,4 @@ project.godot
 *.sublime-*
 *.old
 /tests
+tmp/

@@ -210,7 +210,14 @@ var summary2: Dictionary = d.dump_all()  # falls back to the "godot" command
   `<base>/builtin/<Name>.json` (`String`, `Array`, `int`, …),
   `<base>/builtin/Variant.json` (synthesized root),
   `<base>/classes/<Name>.json` (`Node3D`, `Object`, …),
-  `<base>/index.json` (type lists and counts).
+  `<base>/classes/<Type>.<Enum>.json` (one per native enum, e.g.
+  `CanvasItem.TextureFilter.json`: `{name, kind: "enum", values,
+  is_bitfield}` — dotted enum names resolve through the same file
+  lookup as nested classes),
+  `<base>/index.json` (type lists and counts, plus the `enum_files`
+  marker: databases predating per-enum files read absent and only
+  backfill the enum JSONs offline via `backfill_enums()`, never a
+  full re-dump).
 - Every per-type file holds at minimum the type name, the inheritance
   chain with `Variant` as root (`int` → `Variant`;
   `Node3D` → `Node` → … → `Object` → `Variant`), the allowed operators
@@ -1440,6 +1447,45 @@ func f():
   `struct_unknown_type`, `struct_mismatch`). Same documented gaps as
   tuples (call args, defaults, returns, `is`/`as`, no continuation).
 
+### Enums as types
+
+Script `enum` declarations and native enums (e.g.
+`CanvasItem.TextureFilter`) work as nominal types in `var`/`->`
+positions and `@var`/`@param`/`@return` members, with the dotted
+form across files (`MeuScript.MeuEnum`, `CanvasItem.TextureFilter`
+— bare names stay same-file, like nested classes). Each enum gets
+its own JSON (`user/<Base>.<Enum>.json` for user enums, values
+computed by auto-increment/explicit int with anything else stored
+unknown; `classes/<Class>.<Enum>.json` for natives, emitted by the
+dumper next to the class file, `{name, kind: "enum", values,
+is_bitfield}` — old databases without them backfill offline on
+first ensure, no re-dump). Enum-typed slots hold ints: the
+narrowing rule is symmetric with `int` both ways (no implicit
+union — messages stay nominal), and `_is_object_like`/derivation
+never treat enums as classes.
+
+```gdscript
+enum Filter { NEAREST, LINEAR }
+
+# @var f Filter
+var f: Filter = Filter.NEAREST  # OK: int literal or member
+var g: Filter = 1               # OK: plain ints fit
+var h: Filter = "s"             # ERROR: cannot assign 'String' to enum
+f = 2                           # OK: reassignment follows the same rule
+print(Filter.NOPE)              # ERROR: type 'Filter' has no member 'NOPE'
+var e := Filter.new()           # ERROR: cannot instantiate enum
+class C extends Filter:         # ERROR: cannot use enum as a base class
+    pass
+```
+
+Value checks run on initializers, reassignments and `return`
+literals (non-literals stay silent, like unprovable tuple
+elements); member reads resolve to `int` with value checking on
+both user and native enums. Gaps (documented): call-site args,
+parameter defaults, `is`/`typeof`, bitfields, bare `@GlobalScope`
+names (`Key` — use the qualified form where available), and
+same-enum restriction (any int fits, mirroring the runtime).
+
 ### Nullability
 
 `null` works as a union arm in any type expression
@@ -1837,6 +1883,9 @@ suites still print, so the marker alone could look green).
   cancel/wait mechanics, FullScan policy-snapshot and cancel plumbs,
   warm index-first ordering and index regeneration,
   plugin dispatch null-safety headless).
+  `test_enum.gd` (enums as types: per-enum JSONs with computed
+  values, dumper emission, enum-int narrowing, literal value checks
+  on writes, member reads, `.new()`/`extends` rejections).
 - `tests/AnnotationsStressTest.gd` is a non-suite fixture: a
   single-file stress of every annotation, valid and invalid uses
   with documented verdicts. It parses in Godot, so its diagnostics

@@ -56,6 +56,7 @@ func _init() -> void:
 		"res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/test_virtual.gd",
 		"res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/test_interface.gd",
 		"res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/test_implements.gd",
+		"res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/test_enum.gd",
 		"res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/test_flow.gd",
 		"res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/test_reuse.gd",
 		"res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/test_editor_bar.gd",

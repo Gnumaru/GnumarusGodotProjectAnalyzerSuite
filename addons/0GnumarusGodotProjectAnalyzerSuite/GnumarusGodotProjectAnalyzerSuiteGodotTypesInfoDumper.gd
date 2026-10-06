@@ -158,13 +158,17 @@ func _finish_dump(infos: Dictionary, merged: Dictionary, docced: Dictionary, dum
 
 ## Ensures the native database under output_base exists: index.json plus
 ## non-empty builtin/ and classes/ directories. Dumps on demand with
-## dump_all() when anything is missing. Returns true when the database
+## dump_all() when anything is missing. A present-but-old database
+## (no enum-files marker) only backfills the per-enum JSONs offline
+## instead of re-dumping. Returns true when the database
 ## is present (or was just dumped); false sets last_error. Never crashes.
 ## The semantic parser and the analyzer call this on every analyze().
 func ensure_present(godot_path: String = "") -> bool:
 	last_error = ""
 	if is_present():
 		return true
+	if _dirs_present() and backfill_enums():
+		return is_present()
 	var exe: String = godot_path
 	if exe == "":
 		exe = default_executable()
@@ -175,11 +179,94 @@ func ensure_present(godot_path: String = "") -> bool:
 
 
 ## True when output_base holds index.json plus non-empty builtin/ and
-## classes/ directories. No dumping, no writes: safe to call often.
+## classes/ directories, AND the index carries the enum-files marker
+## (old databases without per-enum JSONs read false so they migrate).
+## No dumping, no writes: safe to call often.
 func is_present() -> bool:
 	if not FileAccess.file_exists(_join_path(output_base, INDEX_FILE_NAME)):
 		return false
+	if not (_dir_has_files(_join_path(output_base, BUILTIN_DIR_NAME)) and _dir_has_files(_join_path(output_base, CLASSES_DIR_NAME))):
+		return false
+	return _index_has_enum_files()
+
+
+## Dirs half of is_present (no index check): old databases have the
+## dirs but predate per-enum JSONs. Never fails.
+func _dirs_present() -> bool:
+	if output_base == "":
+		return false
 	return _dir_has_files(_join_path(output_base, BUILTIN_DIR_NAME)) and _dir_has_files(_join_path(output_base, CLASSES_DIR_NAME))
+
+
+## True when index.json carries the enum-files marker. Never fails.
+func _index_has_enum_files() -> bool:
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(_join_path(output_base, INDEX_FILE_NAME)))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return false
+	return bool((parsed as Dictionary).get("enum_files", false))
+
+
+## Backfills per-enum JSONs into an old-but-present database (no
+## engine run, no network): reads every builtin/classes type file
+## (skipping already-dotted enum files), rewrites each
+## <Type>.<Enum>.json via _write_enum_infos, then stamps the index
+## marker. Returns false when there is nothing to work with (caller
+## falls through to a full dump). Never crashes.
+func backfill_enums() -> bool:
+	last_error = ""
+	if output_base == "":
+		return false
+	var wrote := false
+	for sub in [BUILTIN_DIR_NAME, CLASSES_DIR_NAME]:
+		var dir := _join_path(output_base, sub)
+		var d: DirAccess = DirAccess.open(dir)
+		if d == null:
+			continue
+		wrote = true
+		d.list_dir_begin()
+		var f: String = d.get_next()
+		while f != "":
+			if f.ends_with(".json") and not _is_enum_file(f):
+				_backfill_file_enums(dir, str(f.get_basename()))
+			f = d.get_next()
+		d.list_dir_end()
+	if not wrote:
+		return false
+	return _stamp_enum_files()
+
+
+## True for already-dotted per-enum files (<Type>.<Enum>.json).
+## Pure.
+static func _is_enum_file(file_name: String) -> bool:
+	var stem := str(file_name)
+	if stem.ends_with(".json"):
+		stem = stem.substr(0, stem.length() - 5)
+	return "." in stem
+
+
+## Emits the missing per-enum JSONs for one dumped type file.
+## Never fails.
+func _backfill_file_enums(dir: String, stem: String) -> void:
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(_join_path(dir, stem + ".json")))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	_write_enum_infos(dir, stem, parsed)
+
+
+## Stamps the enum-files marker on index.json (read-modify-write).
+## False when the index is missing or unreadable. Never crashes.
+func _stamp_enum_files() -> bool:
+	var ipath := _join_path(output_base, INDEX_FILE_NAME)
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(ipath))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return false
+	(parsed as Dictionary)["enum_files"] = true
+	var file := FileAccess.open(ipath, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify(parsed, "\t"))
+	file.close()
+	return true
 
 
 ## Picks the Godot executable for dumping: explicit GODOT_BIN first,
@@ -699,6 +786,7 @@ func write_infos(infos: Dictionary) -> Dictionary:
 			return {}
 		file.store_string(JSON.stringify(info, "\t"))
 		file.close()
+		_write_enum_infos(target, tkey, info)
 		if str(info.get("kind", "")) == "class":
 			class_types.append(tkey)
 		else:
@@ -713,6 +801,7 @@ func write_infos(infos: Dictionary) -> Dictionary:
 		"class_count": class_types.size(),
 		"builtin_types": builtin_types,
 		"class_types": class_types,
+		"enum_files": true,
 	}
 	var index_file := FileAccess.open(_join_path(output_base, INDEX_FILE_NAME), FileAccess.WRITE)
 	if index_file == null:
@@ -721,6 +810,32 @@ func write_infos(infos: Dictionary) -> Dictionary:
 	index_file.store_string(JSON.stringify(index, "\t"))
 	index_file.close()
 	return {"builtin_count": builtin_types.size(), "class_count": class_types.size(), "builtin_types": builtin_types, "class_types": class_types}
+
+
+## Writes one <Type>.<Enum>.json per enum of a dumped type info
+## ({name, kind "enum", values, is_bitfield}) next to the type file:
+## dotted enum names then resolve through the same file lookup as
+## nested classes. Values coerce to int (the dump may carry floats).
+## index.json is untouched. Never fails (a bad entry only skips).
+func _write_enum_infos(target_dir: String, tkey: String, info: Dictionary) -> void:
+	var seen := {}
+	for e in info.get("enums", []):
+		if not (e is Dictionary):
+			continue
+		var ename := str((e as Dictionary).get("name", ""))
+		if ename == "" or seen.has(ename):
+			continue
+		seen[ename] = true
+		var values: Array = []
+		for v in (e as Dictionary).get("values", []):
+			if v is Dictionary and str((v as Dictionary).get("name", "")) != "":
+				values.append({"name": str((v as Dictionary).get("name", "")), "value": int((v as Dictionary).get("value", 0))})
+		var path := _join_path(target_dir, tkey + "." + ename + ".json")
+		var file := FileAccess.open(path, FileAccess.WRITE)
+		if file == null:
+			continue
+		file.store_string(JSON.stringify({"name": tkey + "." + ename, "kind": "enum", "values": values, "is_bitfield": bool((e as Dictionary).get("is_bitfield", false)), "resource_path": "", "node_path": ""}, "\t"))
+		file.close()
 
 
 ## Builds the info Dictionary for one builtin Variant type.
