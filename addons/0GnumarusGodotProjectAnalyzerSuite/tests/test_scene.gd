@@ -19,6 +19,7 @@ func run() -> Dictionary:
 	_s_multiline(h)
 	_s_comments(h)
 	_s_errors(h)
+	_s_object_call(h)
 	_s_reuse(h)
 	_s_fixtures(h)
 	_s_project(h)
@@ -101,6 +102,33 @@ func _s_errors(h) -> void:
 	h.check(int(bad2.get("errors", 0)) > 0, "unclosed array errors")
 	var ok := p.parse_text("[resource]\na = 1\n")
 	h.check(int(ok.get("errors", -1)) == 0 and p.last_error == "", "reuse resets errors")
+
+
+func _s_object_call(h) -> void:
+	var p = Scene.new()
+	var d := p.parse_text("[resource]\na = Object(InputEventKey,\"deadzone\":0.5,\"pressed\":false)\n")
+	h.check(int(d.get("errors", -1)) == 0, "object call colon pairs clean")
+	var call: Dictionary = ((d.get("resources", []) as Array)[0] as Dictionary).get("props", {}).get("a", {})
+	h.check(str(call.get("type", "")) == "call" and str(call.get("name", "")) == "Object", "object call name")
+	var args: Array = call.get("args", [])
+	h.check(args.size() == 3, "object call arity")
+	h.check(str((args[0] as Dictionary).get("type", "")) == "identifier", "type tag plain arg")
+	h.check(str((args[1] as Dictionary).get("type", "")) == "pair", "colon pair node")
+	h.check(str(((args[1] as Dictionary).get("key", {}) as Dictionary).get("value", "")) == "deadzone", "pair key")
+	h.check(float(((args[1] as Dictionary).get("value", {}) as Dictionary).get("value", 0.0)) == 0.5, "pair value")
+	var eq := p.parse_text("[resource]\na = Object(T,\"k\"=1)\n")
+	h.check(int(eq.get("errors", -1)) == 0, "equals pair clean")
+	var multi := p.parse_text("[input]\nau={\n\"deadzone\": 0.5,\n\"events\": [Object(InputEventKey,\"pressed\":false,\"script\":null)\n, Object(InputEventJoypadButton,\"button_index\":3)\n]\n}\n")
+	h.check(int(multi.get("errors", -1)) == 0, "multiline input mapping clean")
+	var au: Dictionary = ((multi.get("sections", []) as Array)[0] as Dictionary).get("props", {}).get("au", {})
+	h.check(str(au.get("type", "")) == "dict", "mapping dict node")
+	var entries: Array = au.get("entries", [])
+	var evts: Dictionary = (entries[1] as Dictionary).get("value", {})
+	var items: Array = evts.get("items", [])
+	var ev: Dictionary = items[0]
+	h.check(str(ev.get("type", "")) == "call" and (ev.get("args", []) as Array).size() == 3, "mapping event call args")
+	var bad := p.parse_text("[resource]\na = Object(T,\"k\":)\n")
+	h.check(int(bad.get("errors", 0)) > 0, "dangling pair value errors")
 
 
 func _s_reuse(h) -> void:

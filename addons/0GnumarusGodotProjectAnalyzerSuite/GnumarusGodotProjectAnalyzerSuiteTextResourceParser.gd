@@ -662,7 +662,7 @@ func _parse_ident_or_call_node() -> Dictionary:
 	_vdepth += 1
 	var args: Array = []
 	while not _v_at_end() and str(_v_peek().get("type", "")) != "RPAREN":
-		args.append(_parse_value_node())
+		args.append(_parse_call_arg())
 		if _v_at_end():
 			break
 		var sep := str(_v_peek().get("type", ""))
@@ -680,6 +680,25 @@ func _parse_ident_or_call_node() -> Dictionary:
 		_v_advance()
 	_vdepth -= 1
 	return {"type": "call", "name": name, "args": args, "line": _vline, "raw": name + "(...)"}
+
+
+## One call argument: a plain value, or a `key: value` / `key =
+## value` pair (Godot's Object(Type, prop: value, ...) builtin form,
+## as in project.godot input mappings). Malformed values come back
+## as invalid nodes, like everywhere else. Never fails.
+func _parse_call_arg() -> Dictionary:
+	var first := _parse_value_node()
+	if _v_at_end():
+		return first
+	var sep := str(_v_peek().get("type", ""))
+	if sep != "COLON" and sep != "EQUALS":
+		return first
+	_v_advance()
+	var second := _parse_value_node()
+	var ln := _vline
+	if first is Dictionary:
+		ln = int((first as Dictionary).get("line", _vline))
+	return {"type": "pair", "key": first, "value": second, "line": ln}
 
 
 ## Unwraps scalar value nodes to natives for header attributes.

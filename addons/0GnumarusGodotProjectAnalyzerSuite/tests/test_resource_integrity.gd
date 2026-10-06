@@ -44,6 +44,7 @@ func run() -> Dictionary:
 	_r_reuse(h)
 	_r_collect(h)
 	_r_unreadable(h)
+	_r_object_call(h)
 	return h.result()
 
 
@@ -185,6 +186,17 @@ func _r_unreadable(h) -> void:
 	var res: Dictionary = c.analyze_file("res://addons/0GnumarusGodotProjectAnalyzerSuite/tests/NopeXyz123.tscn", maps[0], maps[1], Callable(self, "_exists"), Callable(self, "_read"))
 	h.check(_errs(res, "unreadable").size() == 1, "unreadable errors once")
 	h.check(c.last_error != "", "last_error set on unreadable")
+
+
+func _r_object_call(h) -> void:
+	var c := _checker()
+	var maps := _maps()
+	var mapping := "[input]\nau={\n\"deadzone\": 0.5,\n\"events\": [Object(InputEventKey,\"pressed\":false,\"script\":null)\n, Object(InputEventJoypadButton,\"button_index\":3)\n]\n}\n"
+	var res: Dictionary = c.analyze_text(mapping, "res://project.godot", maps[0], maps[1], Callable(self, "_exists"), Callable(self, "_read"))
+	h.check(_errs(res, "parse_error").is_empty(), "input mapping no parse errors")
+	h.check((res.get("errors", []) as Array).is_empty(), "input mapping fully clean")
+	var ref := "[resource]\na = Object(T,\"icon\"=\"res://gone/icon.png\")\n"
+	h.check(_errs(c.analyze_text(ref, "res://x.tres", maps[0], maps[1], Callable(self, "_exists"), Callable(self, "_read")), "missing_file").size() == 1, "pair string refs still checked")
 
 
 func _r_sidecar(h) -> void:

@@ -420,7 +420,9 @@ var same: Dictionary = scene.parse_text("[resource]\na = 1\n")
   `[{"key", "value"}]` pairs, `:` or `=` separators), `call`
   (`name` + `args`: `Color(...)`, `Vector2(...)`,
   `Transform3D(...)`, `ExtResource(...)`, `SubResource(...)`,
-  `PackedStringArray(...)`, ...) and `invalid` (kept, plus an error
+  `PackedStringArray(...)`, `Object(Type, "prop": value, ...)` with
+  `pair` (`{"key", "value"}`) args like project.godot input mappings,
+  ...) and `invalid` (kept, plus an error
   entry). Nesting past 64 levels errors instead of recursing forever.
 - Comments start with `;` outside strings at bracket depth 0 and run
   to the physical line end. Values may span physical lines inside

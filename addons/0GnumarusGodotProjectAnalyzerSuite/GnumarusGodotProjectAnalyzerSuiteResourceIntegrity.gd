@@ -674,6 +674,10 @@ func _walk_node(node: Variant, path: String, by_uid: Dictionary, verify_uids: bo
 			_walk_node((entry as Dictionary).get("key"), path, by_uid, verify_uids, exists, ext_ids, sub_ids, errors)
 			_walk_node((entry as Dictionary).get("value"), path, by_uid, verify_uids, exists, ext_ids, sub_ids, errors)
 		return
+	if ntype == "pair":
+		_walk_node(n.get("key"), path, by_uid, verify_uids, exists, ext_ids, sub_ids, errors)
+		_walk_node(n.get("value"), path, by_uid, verify_uids, exists, ext_ids, sub_ids, errors)
+		return
 	if ntype == "string":
 		_check_bare_string(str(n.get("value", "")), line, path, by_uid, verify_uids, exists, errors)
 
