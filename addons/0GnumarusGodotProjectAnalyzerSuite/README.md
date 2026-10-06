@@ -1460,7 +1460,12 @@ same way, and a sole `null` `match` pattern narrows its branch.
 Guard clauses narrow what follows: when an `if` null-check's null
 side ends in `return` (`if x == null: return`, `if x != null: ...
 else: return`, `if not x: return` on Objects), the rest of the block
-runs non-null. Every `elif` branch runs narrowed from the
+runs non-null. `assert(...)` proves the same as an `if` holding
+side for the code that follows it: `assert(x)`,
+`assert(x != null)`, `assert(not x == null)` and
+`assert(is_instance_valid(x))` (plus typetests, and an optional
+message argument) mark the subject proven non-null, while
+`assert(x == null)` proves exact null. Every `elif` branch runs narrowed from the
 accumulated previous-failed state (`elif x != null:` holds non-null
 even when the `if` tested something else).
 Anything provably null
@@ -1782,8 +1787,9 @@ suites still print, so the marker alone could look green).
   punctuation/line-suffix stripping, dynamic/probe/meta skips,
   ignore directives), reuse, collect, unreadable files),
   `test_null.gd` (nullability: `null` union arms and compat, reserved
-  `null` names, `==`/`!=` narrowing, exact-null access errors and
-  generic bound violations on null arguments),
+  `null` names, `==`/`!=` narrowing, exact-null access errors,
+  `assert(...)` proof parity with `if` holding sides, and generic
+  bound violations on null arguments),
   `test_not_null.gd` (trailing `not_null`: parse, contradiction,
   `= null` violations, guard-set flags, redefinition clearing,
   stamp-vs-mark write split (distrust errors, trust companions),

@@ -11429,6 +11429,68 @@ func _watchable_heads(itypes: Array) -> bool:
 	return false
 
 
+## Applies an `assert(...)` statement's proof to the flow env in
+## place: a passing assert holds exactly like an `if` holding side,
+## so the same null-family (and typetest) narrowing runs, plus
+## `is_instance_valid(x)` (which has no `if` equivalent) marking x
+## proven non-null. Anything else stays silent. Never fails.
+func _apply_assert_guard(node: Dictionary, scope: Dictionary, owner: String, fn: Variant, env: Dictionary) -> void:
+	var args: Variant = node.get("args", [])
+	if not (args is Array) or (args as Array).is_empty():
+		return
+	var cond := _assert_cond(args)
+	if cond.is_empty():
+		return
+	_apply_null_family_guard(cond, fn, scope, owner, env)
+	_apply_instance_valid_guard(cond, fn, scope, owner, env)
+
+
+## First top-level argument of an assert statement (the condition;
+## an optional message follows the comma). [] when absent. Pure.
+static func _assert_cond(inner: Array) -> Array:
+	var depth := 0
+	var i := 0
+	while i < inner.size():
+		if not (inner[i] is Dictionary):
+			i += 1
+			continue
+		var ty := str((inner[i] as Dictionary).get("type", ""))
+		if ty == "LPAREN" or ty == "LBRACKET" or ty == "LBRACE":
+			depth += 1
+		elif ty == "RPAREN" or ty == "RBRACKET" or ty == "RBRACE":
+			depth -= 1
+		elif ty == "COMMA" and depth == 0:
+			return _trim_trivia(inner.slice(0, i))
+		i += 1
+	return _trim_trivia(inner)
+
+
+## Marks `x` proven non-null behind `assert(is_instance_valid(x))`:
+## a passing assert means a live instance (never null). Only the
+## bare positive shape counts (`not` proves nothing usable); the
+## target must resolve, like every other guard. Never fails.
+func _apply_instance_valid_guard(cond: Array, fn: Variant, scope: Dictionary, owner: String, env: Dictionary) -> void:
+	var be := _guard_bounds(cond)
+	var s := int(be[0])
+	var e := int(be[1])
+	if e - s != 4:
+		return
+	if _vt_type(cond, s) != "IDENTIFIER" or _vt_val(cond, s) != "is_instance_valid":
+		return
+	if _vt_type(cond, s + 1) != "LPAREN" or _match_close(cond, s + 1) != s + 3:
+		return
+	if _vt_type(cond, s + 2) != "IDENTIFIER":
+		return
+	var vname := _vt_val(cond, s + 2)
+	if vname == "" or vname == "_":
+		return
+	var fnd: Dictionary = fn if fn is Dictionary else {}
+	var target := _free_var_target(vname, fnd, scope, owner, _cond_use_line(cond))
+	if target.is_empty() or target.has("bad"):
+		return
+	(env as Dictionary)[ENV_NOT_NULL_PREFIX + vname] = true
+
+
 ## Tracks `name = ...` reassignments: generic call results (see
 ## _flow_assign_call) plus the `= null` check against not_null state.
 func _flow_assign_stmt(node: Dictionary, scope: Dictionary, fn: Variant, env: Dictionary, owner: String) -> void:
@@ -12017,6 +12079,7 @@ func _flow_stmt(node: Dictionary, scope: Dictionary, owner: String, fn: Variant,
 		_verify_tokens(_as_tokens(node.get("value", null)), scope, owner, fn, env, {})
 		return
 	if t == "ASSERT_STMT":
+		_apply_assert_guard(node, scope, owner, fn, env)
 		_verify_tokens(_flat_tokens(node.get("args", [])), scope, owner, fn, env, {})
 		return
 	if t == "ACCESSOR":

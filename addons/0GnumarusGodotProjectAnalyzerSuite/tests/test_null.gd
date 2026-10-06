@@ -17,6 +17,7 @@ func run() -> Dictionary:
 	_n_exact(h)
 	_n_generic(h)
 	_n_maybe(h)
+	_n_assert(h)
 	return h.result()
 
 
@@ -116,6 +117,22 @@ func _has_warn_kind(res: Dictionary, kind: String) -> bool:
 		if str((w as Dictionary).get("kind", "")) == kind:
 			return true
 	return false
+
+
+## `assert(...)` narrows like an `if` holding side: null-family
+## shapes, typetests and `is_instance_valid(x)` prove the flow that
+## follows; anything else stays as unguarded.
+func _n_assert(h) -> void:
+	var decl := "extends RefCounted\n# @var x Node|null\nvar x: Node\nfunc f() -> void:\n"
+	h.check(not _has_warn_kind(h.analyze_text(decl + "\tassert(x != null)\n\tx.queue_free()\n", "res://tests/tmp_null_a01.gd"), "maybe_null"), "assert ne silences")
+	h.check(not _has_warn_kind(h.analyze_text(decl + "\tassert(not x == null)\n\tx.queue_free()\n", "res://tests/tmp_null_a02.gd"), "maybe_null"), "assert negated eq silences")
+	h.check(not _has_warn_kind(h.analyze_text(decl + "\tassert(is_instance_valid(x))\n\tx.queue_free()\n", "res://tests/tmp_null_a03.gd"), "maybe_null"), "assert is_instance_valid silences")
+	h.check(not _has_warn_kind(h.analyze_text(decl + "\tassert(x != null, \"must exist\")\n\tx.queue_free()\n", "res://tests/tmp_null_a04.gd"), "maybe_null"), "assert message arg still proves")
+	h.check(not _has_warn_kind(h.analyze_text("extends RefCounted\nfunc f() -> void:\n\t# @var y Node|null\n\tvar y: Node\n\tassert(y != null)\n\ty.queue_free()\n", "res://tests/tmp_null_a05.gd"), "maybe_null"), "assert proves locals")
+	h.check(_has_err(h.analyze_text(decl + "\tassert(x == null)\n\tx.queue_free()\n", "res://tests/tmp_null_a06.gd"), "null_access", "on null"), "assert eq proves null")
+	h.check(_has_warn_kind(h.analyze_text(decl + "\tassert()\n\tx.queue_free()\n", "res://tests/tmp_null_a07.gd"), "maybe_null"), "empty assert proves nothing")
+	h.check(_has_warn_kind(h.analyze_text(decl + "\tassert(is_instance_valid(zz_unknown))\n\tx.queue_free()\n", "res://tests/tmp_null_a08.gd"), "maybe_null"), "assert on unknown target stays silent")
+	h.check(_has_err(h.analyze_text(decl + "\tassert(x != null)\n\tx = null\n\tx.queue_free()\n", "res://tests/tmp_null_a09.gd"), "null_access", "on null"), "reassign after assert errors again")
 
 
 func _n_maybe(h) -> void:
